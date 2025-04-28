@@ -498,6 +498,7 @@
     <None Remove="EDSDK\Ucs32P.dll" />
     <None Remove="EdsImage.dll" />
     <None Remove="Mlib.dll" />
+    <None Remove="SettingsPage.xaml" />
     <None Remove="Ucs32P.dll" />
   </ItemGroup>
 
@@ -1020,11 +1021,20 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250401001" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="9.0.4" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="EDSDK.cs">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="SettingsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
 
   <!--
