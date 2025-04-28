@@ -498,6 +498,7 @@
     <None Remove="EDSDK\Ucs32P.dll" />
     <None Remove="EdsImage.dll" />
     <None Remove="Mlib.dll" />
+    <None Remove="PhotoBoothPage.xaml" />
     <None Remove="SettingsPage.xaml" />
     <None Remove="Ucs32P.dll" />
   </ItemGroup>
@@ -1030,6 +1031,11 @@
     <Compile Update="EDSDK.cs">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="PhotoBoothPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Page Update="SettingsPage.xaml">

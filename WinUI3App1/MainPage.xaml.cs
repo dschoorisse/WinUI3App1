@@ -259,8 +259,9 @@ namespace WinUI3App
         private void TakePhotoButton_Click(object sender, RoutedEventArgs e)
         {
             AddLog("Photo capture initiated");
+
             // Navigate to photo capture page
-            // Frame.Navigate(typeof(PhotoCapturePage));
+            Frame.Navigate(typeof(PhotoBoothPage));
         }
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)

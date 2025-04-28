@@ -33,6 +33,8 @@ namespace WinUI3App1
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
 
+        public static EDSDK EDSDK { get; private set; }
+
         /// <summary>
         /// Initializes the singleton application object.  This is the first line of authored code
         /// executed, and as such is the logical equivalent of main() or WinMain().
