@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
+using System.Threading;
 
 namespace WinUI3App1
 {
@@ -23,6 +24,9 @@ namespace WinUI3App1
         private ComboBox _apertureComboBox;
         private ComboBox _shutterSpeedComboBox;
         private ComboBox _imageQualityComboBox;
+
+        // Live view background loop
+        private CancellationTokenSource _liveViewCancellationTokenSource;
 
         public PhotoBoothPage()
         {
@@ -623,6 +627,8 @@ namespace WinUI3App1
 
                         // In a real implementation, you would download and display
                         // live view frames continuously here
+
+                        StartLiveViewDisplayLoop(); // <-- start showing frames
                     }
                     else
                     {
@@ -643,6 +649,10 @@ namespace WinUI3App1
                 {
                     _statusText.Text = "Stopping Live View...";
 
+                    // Stop continuous frame download
+                    _liveViewCancellationTokenSource?.Cancel();
+
+                    // Send stop live view command to the camera
                     bool success = _cameraController.StopLiveView();
 
                     if (success)
@@ -686,5 +696,40 @@ namespace WinUI3App1
                 _cameraController = null;
             }
         }
+
+        private async void StartLiveViewDisplayLoop()
+        {
+            _liveViewCancellationTokenSource = new CancellationTokenSource();
+            var token = _liveViewCancellationTokenSource.Token;
+
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    var frameData = await _cameraController.DownloadLiveViewFrameAsync();
+                    if (frameData != null)
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            using var stream = new MemoryStream(frameData);
+                            var bitmap = new BitmapImage();
+                            bitmap.SetSource(stream.AsRandomAccessStream());
+                            _previewImage.Source = bitmap;
+                        });
+                    }
+
+                    await Task.Delay(66, token); // ~15 FPS
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // Expected when stopping live view
+            }
+            catch (Exception ex)
+            {
+                App.Logger.Error(ex, "LiveView display loop error");
+            }
+        }
+
     }
 }
