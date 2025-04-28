@@ -701,11 +701,16 @@ namespace WinUI3App1
         {
             _liveViewCancellationTokenSource = new CancellationTokenSource();
             var token = _liveViewCancellationTokenSource.Token;
+            //const int targetFrameTimeMs = 66; // 15 fps
+            const int targetFrameTimeMs = 45;
+
 
             try
             {
                 while (!token.IsCancellationRequested)
                 {
+                    var frameStartTime = DateTime.UtcNow;
+
                     var frameData = await _cameraController.DownloadLiveViewFrameAsync();
                     if (frameData != null)
                     {
@@ -718,18 +723,25 @@ namespace WinUI3App1
                         });
                     }
 
-                    await Task.Delay(66, token); // ~15 FPS
+                    var frameDuration = (DateTime.UtcNow - frameStartTime).TotalMilliseconds;
+                    var delay = Math.Max(0, targetFrameTimeMs - (int)frameDuration);
+
+                    if (delay > 0)
+                    {
+                        await Task.Delay(delay, token);
+                    }
                 }
             }
             catch (TaskCanceledException)
             {
-                // Expected when stopping live view
+                // Expected when stopping
             }
             catch (Exception ex)
             {
                 App.Logger.Error(ex, "LiveView display loop error");
             }
         }
+
 
     }
 }
