@@ -551,61 +551,72 @@ namespace WinUI3App1
 
             try
             {
-                if (_isCountdownActive)
-                {
-                    // Start countdown timer
-                    _statusText.Text = $"Taking picture in {_countdownValue}...";
+                _statusText.Text = "Taking picture...";
 
-                    for (int i = _countdownValue; i > 0; i--)
-                    {
-                        _statusText.Text = $"Taking picture in {i}...";
-                        await Task.Delay(1000);
-                    }
+                // 1. Stop Live View fetching
+                //_liveViewCancellationTokenSource?.Cancel();
 
-                    _statusText.Text = "Taking picture...";
-                }
-                else
-                {
-                    _statusText.Text = "Taking picture...";
-                }
-
-                // Take the picture
+                // 2. Tell the camera to take a photo
                 bool success = _cameraController.TakePicture();
 
                 if (success)
                 {
-                    _statusText.Text = "Picture taken successfully";
+                    _statusText.Text = "Picture taken!";
 
-                    // In a real photo booth app, you'd want to handle displaying
-                    // the image after capture. This would require implementing
-                    // an event in your camera controller for when an image is
-                    // downloaded from the camera and then displaying it.
+                    // 3. Small wait for camera to save
+                    await Task.Delay(2000);
+
+                    // 4. OPTIONAL: Load the latest captured image
+                    // For now we'll just show a placeholder or black screen
+
+                    // DVS: maybe not download it from camera, but use the low quality preview image only for on-screen
+
+                    // If you have image download already (in ObjectEventHandler), you could load it here!
+
+                    /*
+                    var latestPhotoBytes = await LoadLatestPhotoBytesAsync();
+                    if (latestPhotoBytes != null)
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            using var stream = new MemoryStream(latestPhotoBytes);
+                            var bitmap = new BitmapImage();
+                            bitmap.SetSource(stream.AsRandomAccessStream());
+                            _previewImage.Source = bitmap;
+                        });
+
+                        await Task.Delay(3000); // Show the photo for 3 seconds
+                    }
+                    */
+
+                    await Task.Delay(3000); // Just wait 3 seconds for now
                 }
                 else
                 {
-                    _statusText.Text = "Failed to take picture";
-
-                    ContentDialog dialog = new ContentDialog
-                    {
-                        Title = "Camera Error",
-                        Content = "Failed to take picture. The camera may be busy or not responding.",
-                        CloseButtonText = "OK",
-                        XamlRoot = this.XamlRoot
-                    };
-
-                    await dialog.ShowAsync();
+                    _statusText.Text = "Failed to take picture.";
                 }
             }
             catch (Exception ex)
             {
                 _statusText.Text = $"Error: {ex.Message}";
-                App.Logger.Error(ex, "Error taking picture");
             }
             finally
             {
+                // 5. Restart Live View
+                if (_cameraController.StartLiveView())
+                {
+                    StartLiveViewDisplayLoop();
+                    _statusText.Text = "Ready for next photo!";
+                }
+                else
+                {
+                    _statusText.Text = "Failed to restart Live View.";
+                }
+
                 button.IsEnabled = true;
             }
         }
+
 
         private async void LiveViewButton_Click(object sender, RoutedEventArgs e)
         {
