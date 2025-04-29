@@ -602,16 +602,16 @@ namespace WinUI3App1
             }
             finally
             {
-                // 5. Restart Live View
-                if (_cameraController.StartLiveView())
-                {
-                    StartLiveViewDisplayLoop();
-                    _statusText.Text = "Ready for next photo!";
-                }
-                else
-                {
-                    _statusText.Text = "Failed to restart Live View.";
-                }
+                //// 5. Restart Live View
+                //if (_cameraController.StartLiveView())
+                //{
+                //    StartLiveViewDisplayLoop();
+                //    _statusText.Text = "Ready for next photo!";
+                //}
+                //else
+                //{
+                //    _statusText.Text = "Failed to restart Live View.";
+                //}
 
                 button.IsEnabled = true;
             }
@@ -714,7 +714,6 @@ namespace WinUI3App1
             var token = _liveViewCancellationTokenSource.Token;
             //const int targetFrameTimeMs = 66; // 15 fps
             const int targetFrameTimeMs = 45;
-
 
             try
             {
