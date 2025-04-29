@@ -17,7 +17,7 @@ namespace WinUI3App1
         // Context for callbacks
         private readonly GCHandle _callbackHandle;
 
-        public CanonCameraController(ILogger logger)
+        public CanonCameraController(ILogger logger, string saveDirectory = null)
         {
             _logger = logger;
 

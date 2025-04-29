@@ -12,7 +12,7 @@ namespace WinUI3App1
     // Separate Photo Booth page that can be navigated to from MainWindow
     public sealed partial class PhotoBoothPage : Page
     {
-        private CanonCameraControllerExtended _cameraController;
+        private CanonCameraController _cameraController;
         private TextBlock _statusText;
         private Image _previewImage;
         private bool _isCountdownActive = false;
@@ -46,7 +46,7 @@ namespace WinUI3App1
             SetupUI();
 
             // Initialize camera controller
-            _cameraController = new CanonCameraControllerExtended(App.Logger, photosDir);
+            _cameraController = new CanonCameraController(App.Logger, photosDir);
         }
 
         private void SetupUI()
