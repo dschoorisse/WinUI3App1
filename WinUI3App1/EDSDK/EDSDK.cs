@@ -25,7 +25,7 @@ namespace WinUI3App1
                 else
                 {
                     Console.WriteLine("Warning: EDSDK directory not found at: " + dllDirectory);
-                }
+                } 
             }
             catch (Exception ex)
             {
