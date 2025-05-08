@@ -9,6 +9,17 @@ namespace WinUI3App1
     /// </summary>
     public static class AppSettings
     {
+        #region General Settings
+        public static string PhotoboothId
+        {
+            // Genereer een unieke ID als deze nog niet bestaat, of gebruik een standaard ID.
+            // BELANGRIJK: Voor elke fysieke photobooth moet je ervoor zorgen dat deze ID UNIEK is!
+            // Je kunt dit eventueel handmatig instellen tijdens de installatie of via een configuratiebestand.
+            get => GetSetting<string>("PhotoboothId", $"PhotoBooth_{Environment.MachineName}"); // Gebruik machinenaam als redelijke standaard
+            set => SaveSetting("PhotoboothId", value);
+        }
+        #endregion
+
         #region UI/Look and Feel
 
         public static string BackgroundImagePath
@@ -105,6 +116,36 @@ namespace WinUI3App1
 
         #endregion
 
+
+        #region MQTT Settings
+
+        public static string MqttBrokerAddress
+        {
+            get => GetSetting<string>("MqttBrokerAddress", "192.168.1.3"); // Default or your broker
+            set => SaveSetting("MqttBrokerAddress", value);
+        }
+
+        public static int MqttBrokerPort
+        {
+            get => GetSetting("MqttBrokerPort", 1883); // Default MQTT port
+            set => SaveSetting("MqttBrokerPort", value);
+        }
+
+        public static string MqttUsername
+        {
+            get => GetSetting<string>("MqttUsername", "videopaal"); // <-- SET YOUR USERNAME HERE (or leave empty if none)
+            set => SaveSetting("MqttUsername", value);
+        }
+
+        public static string MqttPassword
+        {
+            get => GetSetting<string>("MqttPassword", "d8232msn2987sd"); // <-- SET YOUR PASSWORD HERE (or leave empty if none)
+            set => SaveSetting("MqttPassword", value);
+        }
+
+        #endregion
+
+
         #region Helper Methods
 
         private static T GetSetting<T>(string key, T defaultValue)
@@ -138,5 +179,6 @@ namespace WinUI3App1
         }
 
         #endregion
+
     }
 }

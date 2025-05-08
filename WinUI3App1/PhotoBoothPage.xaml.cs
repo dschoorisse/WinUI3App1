@@ -12,7 +12,6 @@ namespace WinUI3App1
     // Separate Photo Booth page that can be navigated to from MainWindow
     public sealed partial class PhotoBoothPage : Page
     {
-        private CanonCameraController _cameraController;
         private TextBlock _statusText;
         private Image _previewImage;
         private bool _isCountdownActive = false;
@@ -46,7 +45,7 @@ namespace WinUI3App1
             SetupUI();
 
             // Initialize camera controller
-            _cameraController = new CanonCameraController(App.Logger, photosDir);
+            //_cameraController = new CanonCameraController(App.Logger, photosDir);
         }
 
         private void SetupUI()
@@ -271,8 +270,8 @@ namespace WinUI3App1
 
                 try
                 {
-                    bool connected = _cameraController.Connect();
-
+                    //bool connected = _cameraController.Connect();
+                    bool connected = true;
                     if (connected)
                     {
                         _statusText.Text = "Camera connected";
@@ -344,7 +343,7 @@ namespace WinUI3App1
 
                 try
                 {
-                    _cameraController.Disconnect();
+                    //_cameraController.Disconnect();
 
                     _statusText.Text = "Camera disconnected";
                     button.Content = "Connect Camera";
@@ -557,10 +556,11 @@ namespace WinUI3App1
                 //_liveViewCancellationTokenSource?.Cancel();
 
                 // 2. Tell the camera to take a photo
-                bool success = _cameraController.TakePicture();
+                //bool success = _cameraController.TakePicture();
 
-                if (success)
-                {
+                //if (success)
+                if (true)
+                    {
                     _statusText.Text = "Picture taken!";
 
                     // 3. Small wait for camera to save
@@ -629,8 +629,8 @@ namespace WinUI3App1
                 {
                     _statusText.Text = "Starting Live View...";
 
-                    bool success = _cameraController.StartLiveView();
-
+                    //bool success = _cameraController.StartLiveView();
+                    bool success = false;
                     if (success)
                     {
                         button.Content = "Stop Live View";
@@ -664,10 +664,11 @@ namespace WinUI3App1
                     _liveViewCancellationTokenSource?.Cancel();
 
                     // Send stop live view command to the camera
-                    bool success = _cameraController.StopLiveView();
+                    //bool success = _cameraController.StopLiveView();
 
-                    if (success)
-                    {
+                    //if (success)
+                    if (true)
+                        {
                         button.Content = "Start Live View";
                         _statusText.Text = "Live View stopped";
                     }
@@ -699,13 +700,13 @@ namespace WinUI3App1
         {
             base.OnNavigatedFrom(e);
 
-            // Make sure camera is disconnected when navigating away
-            if (_cameraController != null)
-            {
-                _cameraController.Disconnect();
-                _cameraController.Dispose();
-                _cameraController = null;
-            }
+            //// Make sure camera is disconnected when navigating away
+            //if (_cameraController != null)
+            //{
+            //    _cameraController.Disconnect();
+            //    _cameraController.Dispose();
+            //    _cameraController = null;
+            //}
         }
 
         private async void StartLiveViewDisplayLoop()
@@ -715,41 +716,41 @@ namespace WinUI3App1
             //const int targetFrameTimeMs = 66; // 15 fps
             const int targetFrameTimeMs = 45;
 
-            try
-            {
-                while (!token.IsCancellationRequested)
-                {
-                    var frameStartTime = DateTime.UtcNow;
+            //try
+            //{
+            //    while (!token.IsCancellationRequested)
+            //    {
+            //        var frameStartTime = DateTime.UtcNow;
 
-                    var frameData = await _cameraController.DownloadLiveViewFrameAsync();
-                    if (frameData != null)
-                    {
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            using var stream = new MemoryStream(frameData);
-                            var bitmap = new BitmapImage();
-                            bitmap.SetSource(stream.AsRandomAccessStream());
-                            _previewImage.Source = bitmap;
-                        });
-                    }
+            //        var frameData = await _cameraController.DownloadLiveViewFrameAsync();
+            //        if (frameData != null)
+            //        {
+            //            DispatcherQueue.TryEnqueue(() =>
+            //            {
+            //                using var stream = new MemoryStream(frameData);
+            //                var bitmap = new BitmapImage();
+            //                bitmap.SetSource(stream.AsRandomAccessStream());
+            //                _previewImage.Source = bitmap;
+            //            });
+            //        }
 
-                    var frameDuration = (DateTime.UtcNow - frameStartTime).TotalMilliseconds;
-                    var delay = Math.Max(0, targetFrameTimeMs - (int)frameDuration);
+            //        var frameDuration = (DateTime.UtcNow - frameStartTime).TotalMilliseconds;
+            //        var delay = Math.Max(0, targetFrameTimeMs - (int)frameDuration);
 
-                    if (delay > 0)
-                    {
-                        await Task.Delay(delay, token);
-                    }
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                // Expected when stopping
-            }
-            catch (Exception ex)
-            {
-                App.Logger.Error(ex, "LiveView display loop error");
-            }
+            //        if (delay > 0)
+            //        {
+            //            await Task.Delay(delay, token);
+            //        }
+            //    }
+            //}
+            //catch (TaskCanceledException)
+            //{
+            //    // Expected when stopping
+            //}
+            //catch (Exception ex)
+            //{
+            //    App.Logger.Error(ex, "LiveView display loop error");
+            //}
         }
 
 
