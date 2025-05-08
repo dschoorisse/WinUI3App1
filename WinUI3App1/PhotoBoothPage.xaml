@@ -7,19 +7,6 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Page.Resources>
-        <Style x:Key="PhotoBoothButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="{ThemeResource SystemAccentColor}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Padding" Value="12,8,12,8" />
-            <Setter Property="FontSize" Value="18" />
-            <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
-            <Setter Property="MinWidth" Value="180" />
-            <Setter Property="MinHeight" Value="50" />
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-        </Style>
-    </Page.Resources>
-
     <Grid x:Name="RootGrid">
         <Image x:Name="PageBackgroundImage" Stretch="UniformToFill" VerticalAlignment="Center" HorizontalAlignment="Center"/>
         <Grid x:Name="PageBackgroundOverlay" Background="#4C000000" Visibility="Collapsed"/>
@@ -49,44 +36,64 @@
                            TextAlignment="Center"/>
             </Border>
 
-            <Viewbox Grid.Row="1" 
-                     StretchDirection="Both" 
-                     Stretch="Uniform" 
-                     Margin="0,20,0,20">
-                <Grid Width="640" Height="480">
-                    <Image x:Name="CameraPlaceholderImage"
-                           Source="ms-appx:///Assets/placeholder.jpg"
-                           Stretch="UniformToFill"/>
+            <Grid Grid.Row="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                    <Border x:Name="CountdownTextBackground"
-                            Background="#A0000000"
-                            CornerRadius="8"
-                            Padding="30,20"
+                <Viewbox Grid.Row="0" 
+                         StretchDirection="Both" 
+                         Stretch="Uniform" 
+                         Margin="0,20,0,10">
+                    <Grid Width="640" Height="480">
+                        <Image x:Name="CameraPlaceholderImage"
+                               Source="ms-appx:///Assets/placeholder.jpg"
+                               Stretch="UniformToFill"/>
+
+                        <Border x:Name="CountdownTextBackground"
+                                Background="#A0000000"
+                                CornerRadius="8"
+                                Padding="30,20"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Opacity="0">
+                            <TextBlock x:Name="CountdownText"
+                                       Text="3"
+                                       FontSize="120"
+                                       FontWeight="Bold"
+                                       Foreground="White"/>
+                        </Border>
+
+                        <Image x:Name="TakenPhotoImage"
+                               Stretch="Uniform"
+                               Opacity="0"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               RenderTransformOrigin="0.5,0.5">
+                            <Image.RenderTransform>
+                                <ScaleTransform ScaleX="0.5" ScaleY="0.5"/>
+                            </Image.RenderTransform>
+                        </Image>
+                    </Grid>
+                </Viewbox>
+
+                <StackPanel x:Name="ProgressIndicatorPanel"
+                            Grid.Row="1"
+                            Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Opacity="0">
-                        <TextBlock x:Name="CountdownText"
-                                   Text="3"
-                                   FontSize="120"
-                                   FontWeight="Bold"
-                                   Foreground="White"/>
-                    </Border>
+                            VerticalAlignment="Top" 
+                            Spacing="8"
+                            Margin="0,0,0,15">
+                    <Ellipse x:Name="ProgressDot1" Width="12" Height="12" Fill="Gray"/>
+                    <Ellipse x:Name="ProgressDot2" Width="12" Height="12" Fill="Gray"/>
+                    <Ellipse x:Name="ProgressDot3" Width="12" Height="12" Fill="Gray"/>
+                </StackPanel>
+            </Grid>
 
-                    <Image x:Name="TakenPhotoImage"
-                           Stretch="Uniform"
-                           Opacity="0"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           RenderTransformOrigin="0.5,0.5">
-                        <Image.RenderTransform>
-                            <ScaleTransform ScaleX="0.5" ScaleY="0.5"/>
-                        </Image.RenderTransform>
-                    </Image>
-                </Grid>
-            </Viewbox>
 
             <StackPanel x:Name="PhotoGallery"
-                        Grid.Row="1"
+                        Grid.Row="1" 
                         Orientation="Vertical" 
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
@@ -107,52 +114,47 @@
                         Margin="0,40,0,40"
                         Visibility="Collapsed"
                         Opacity="0">
-             
-                <!-- Take Photo Button -->
                 <Button x:Name="RetakeButton"
-                    Click="RetakeButton_Click"
-                    Width="140"
-                    Height="160"
-                    Background="White"
-                    Foreground="Black"
-                    CornerRadius="16">
+                        Click="RetakeButton_Click"
+                        Width="140"
+                        Height="160"
+                        Background="White"
+                        Foreground="Black"
+                        CornerRadius="16">
                     <StackPanel>
                         <FontIcon Glyph="&#xE925;"
-                          FontSize="72"
-                          HorizontalAlignment="Center"/>
+                                  FontSize="72"
+                                  HorizontalAlignment="Center"/>
                         <TextBlock Text="Retake"
-                           FontSize="24"
-                           FontWeight="SemiBold"
-                           Margin="0,2,0,0"
-                           TextAlignment="Center"/>
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,2,0,0"
+                                   TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
-
-                <!-- Record Video Button -->
                 <Button x:Name="AcceptButton"
-                    Click="AcceptButton_Click"
-                    Width="240"
-                    Height="160"
-                    Background="White"
-                    Foreground="Black"
-                    CornerRadius="16">
+                        Click="AcceptButton_Click"
+                        Width="240"
+                        Height="160"
+                        Background="White"
+                        Foreground="Black"
+                        CornerRadius="16">
                     <StackPanel>
                         <FontIcon Glyph="&#xE73E;"
-                            FontSize="72"
-                            HorizontalAlignment="Center"/>
+                                  FontSize="72"
+                                  HorizontalAlignment="Center"/>
                         <TextBlock Text="OK"
-                           FontSize="24"
-                           FontWeight="SemiBold"
-                           Margin="0,2,0,0"
-                           TextAlignment="Center"/>
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Margin="0,2,0,0"
+                                   TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                
             </StackPanel>
 
             <Grid x:Name="OverlayGrid" 
                   Grid.RowSpan="3" 
-                  Background="#CC000000"  
+                  Background="#CC000000" 
                   Visibility="Collapsed" 
                   HorizontalAlignment="Stretch" 
                   VerticalAlignment="Stretch">
