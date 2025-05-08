@@ -7,6 +7,13 @@
     "WinUI3App1 (Unpackaged)": {
       "commandName": "Project",
       "nativeDebugging": true
+    },
+    "Remote PC": {
+      "commandName": "MsixPackage",
+      "nativeDebugging": true,
+      "remoteDebugEnabled": true,
+      "remoteDebugMachine": "192.168.1.226",
+      "authenticationMode": "Windows"
     }
   }
 }
