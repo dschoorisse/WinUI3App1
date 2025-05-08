@@ -104,17 +104,50 @@
                         HorizontalAlignment="Center"
                         VerticalAlignment="Bottom"
                         Spacing="20"
-                        Margin="0,0,0,40"
+                        Margin="0,40,0,40"
                         Visibility="Collapsed"
                         Opacity="0">
-                <Button x:Name="AcceptButton" 
-                        Content="Accept" 
-                        Click="AcceptButton_Click"
-                        Style="{StaticResource PhotoBoothButtonStyle}"/>
-                <Button x:Name="RetakeButton" 
-                        Content="Retake" 
-                        Click="RetakeButton_Click"
-                        Style="{StaticResource PhotoBoothButtonStyle}"/>
+             
+                <!-- Take Photo Button -->
+                <Button x:Name="RetakeButton"
+                    Click="RetakeButton_Click"
+                    Width="140"
+                    Height="160"
+                    Background="White"
+                    Foreground="Black"
+                    CornerRadius="16">
+                    <StackPanel>
+                        <FontIcon Glyph="&#xE925;"
+                          FontSize="72"
+                          HorizontalAlignment="Center"/>
+                        <TextBlock Text="Retake"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Margin="0,2,0,0"
+                           TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Record Video Button -->
+                <Button x:Name="AcceptButton"
+                    Click="AcceptButton_Click"
+                    Width="240"
+                    Height="160"
+                    Background="White"
+                    Foreground="Black"
+                    CornerRadius="16">
+                    <StackPanel>
+                        <FontIcon Glyph="&#xE73E;"
+                            FontSize="72"
+                            HorizontalAlignment="Center"/>
+                        <TextBlock Text="OK"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Margin="0,2,0,0"
+                           TextAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                
             </StackPanel>
 
             <Grid x:Name="OverlayGrid" 
