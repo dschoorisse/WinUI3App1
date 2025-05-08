@@ -21,12 +21,16 @@ using Serilog.Events;
 using Path = System.IO.Path;
 using MQTTnet.Protocol;
 using System.Threading.Tasks;
+using Microsoft.UI.Windowing; // Required for AppWindow and AppWindowPresenterKind
+using WinRT.Interop;
+using Microsoft.UI;          // Required for WindowNative and Win32Interop
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace WinUI3App1
 {
+    // NL-L-PF4ZZ1V0
     /// <summary>
     /// Provides application-specific behavior to supplement the default Application class.
     /// </summary>
@@ -204,10 +208,71 @@ namespace WinUI3App1
         /// Invoked when the application is launched.
         /// </summary>
         /// <param name="args">Details about the launch request and process.</param>
-        protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args) // Make async if not already for MQTT start
         {
             MainWindow = new MainWindow();
             Logger.Information("Main window created");
+
+            // --- Fullscreen Logic Based on Computer Name ---
+            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // <- IMPORTANT: Change this to your actual target computer name
+            string currentComputerName = Environment.MachineName;
+
+            Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
+
+            if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Information("Computer name matches. Attempting to set window to fullscreen.");
+                try
+                {
+                    // Get the AppWindow for the current MainWindow
+                    IntPtr hWnd = WindowNative.GetWindowHandle(MainWindow);
+                    WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+                    AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+
+                    if (appWindow != null)
+                    {
+                        // Check if the current presenter is Overlapped, which is the default windowed mode.
+                        // This check helps avoid errors if the window is already in a compact or fullscreen mode.
+                        if (appWindow.Presenter.Kind == AppWindowPresenterKind.Overlapped)
+                        {
+                            appWindow.SetPresenter(AppWindowPresenterKind.FullScreen); // Set to Fullscreen
+                            Logger.Information("Fullscreen mode has been set.");
+                        }
+                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
+                        {
+                            Logger.Information("Window is already in Fullscreen mode.");
+                        }
+                        else
+                        {
+                            // If it's in some other presenter kind (e.g., CompactOverlay),
+                            // transitioning directly to FullScreen might not be desired or could fail.
+                            Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied to avoid conflicts.", appWindow.Presenter.Kind);
+                        }
+                    }
+                    else
+                    {
+                        Logger.Error("Could not retrieve AppWindow. Fullscreen mode cannot be set.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, "An error occurred while trying to set fullscreen mode.");
+                }
+            }
+            else
+            {
+                Logger.Information("Computer name does not match. Application will start in default windowed mode.");
+                // Optionally, you could maximize the window on non-target machines if desired:
+                // IntPtr hWnd = WindowNative.GetWindowHandle(MainWindow);
+                // WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
+                // AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+                // if (appWindow != null && appWindow.Presenter is OverlappedPresenter overlappedPresenter)
+                // {
+                //     overlappedPresenter.Maximize();
+                //     Logger.Information("Window maximized on non-target machine.");
+                // }
+            }
+            // --- End of Fullscreen Logic ---
 
             MainWindow.Activate();
             Logger.Information("Main window activated");
@@ -217,30 +282,29 @@ namespace WinUI3App1
             {
                 try
                 {
-                    // Start the MQTT client asynchronously
-                    // We don't necessarily await this here, it will run in the background
-                    try { _ = MqttServiceInstance.StartAsync(); }
-                    catch (Exception ex) { Logger.Error(ex, "MQTT [{PhotoboothId}] Failed to start MQTT Service.", PhotoboothIdentifier); }
+                    // Using await here if OnLaunched is async, otherwise _ = ...
+                    await MqttServiceInstance.StartAsync(); // Assuming StartAsync doesn't block UI for too long
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error(ex, "Failed to start MQTT Service.");
+                    Logger.Error(ex, "MQTT [{PhotoboothId}] Failed to start MQTT Service on launch.", PhotoboothIdentifier);
                 }
             }
             // ---------------------------
 
-            // Optional: Handle Window Closed event for cleanup
             MainWindow.Closed += async (sender, e) =>
             {
                 Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
                 if (MqttServiceInstance != null)
                 {
-                    // BELANGRIJK: Koppel de event handler los VOORDAT je DisposeAsync aanroept
                     MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
                     await MqttServiceInstance.DisposeAsync();
                     Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
                 }
             };
+
+            // Your existing m_window field seems unused, can be m_mainWindow or just use App.MainWindow static prop
+            // m_window = MainWindow; 
         }
 
         private Window? m_window;
