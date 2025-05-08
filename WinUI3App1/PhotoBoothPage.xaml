@@ -18,22 +18,8 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0"
-                    x:Name="InstructionTextBackground"
-                    Background="#A0000000" 
-                    CornerRadius="8"
-                    Padding="15,10"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="20,40,20,0"
-                    Opacity="0">
-                <TextBlock x:Name="InstructionText"
-                           Text="We are going to take 3 pictures, get ready!"
-                           FontSize="28" 
-                           FontWeight="SemiBold"
-                           Foreground="White"
-                           TextWrapping="Wrap"
-                           TextAlignment="Center"/>
+            <Border Grid.Row="0" x:Name="InstructionTextBackground" Background="#A0000000" CornerRadius="8" Padding="15,10" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="20,40,20,0" Opacity="0">
+                <TextBlock x:Name="InstructionText" Text="We are going to take 3 pictures, get ready!" FontSize="28" FontWeight="SemiBold" Foreground="White" TextWrapping="Wrap" TextAlignment="Center"/>
             </Border>
 
             <Grid Grid.Row="1">
@@ -42,129 +28,67 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <Viewbox Grid.Row="0" 
-                         StretchDirection="Both" 
-                         Stretch="Uniform" 
-                         Margin="0,20,0,10">
-                    <Grid Width="640" Height="480">
-                        <Image x:Name="CameraPlaceholderImage"
-                               Source="ms-appx:///Assets/placeholder.jpg"
-                               Stretch="UniformToFill"/>
+                <Grid Grid.Row="0">
+                    <Viewbox x:Name="CaptureElementsViewbox" StretchDirection="Both" 
+                             Stretch="Uniform" 
+                             Margin="0,20,0,10"
+                             Visibility="Visible">
+                        <Grid Width="640" Height="480">
+                            <Image x:Name="CameraPlaceholderImage" Source="ms-appx:///Assets/placeholder.jpg" Stretch="UniformToFill"/>
+                            <Border x:Name="CountdownTextBackground" Background="#A0000000" CornerRadius="8" Padding="30,20" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0">
+                                <TextBlock x:Name="CountdownText" Text="3" FontSize="120" FontWeight="Bold" Foreground="White"/>
+                            </Border>
+                            <Image x:Name="TakenPhotoImage" Stretch="Uniform" Opacity="0" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                <Image.RenderTransform>
+                                    <ScaleTransform ScaleX="0.5" ScaleY="0.5"/>
+                                </Image.RenderTransform>
+                            </Image>
+                        </Grid>
+                    </Viewbox>
 
-                        <Border x:Name="CountdownTextBackground"
-                                Background="#A0000000"
-                                CornerRadius="8"
-                                Padding="30,20"
+                    <StackPanel x:Name="PhotoGallery"
+                                Orientation="Vertical" 
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
-                                Opacity="0">
-                            <TextBlock x:Name="CountdownText"
-                                       Text="3"
-                                       FontSize="120"
-                                       FontWeight="Bold"
-                                       Foreground="White"/>
-                        </Border>
-
-                        <Image x:Name="TakenPhotoImage"
-                               Stretch="Uniform"
-                               Opacity="0"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               RenderTransformOrigin="0.5,0.5">
-                            <Image.RenderTransform>
-                                <ScaleTransform ScaleX="0.5" ScaleY="0.5"/>
-                            </Image.RenderTransform>
-                        </Image>
-                    </Grid>
-                </Viewbox>
+                                Spacing="10" 
+                                Visibility="Collapsed" Opacity="0">
+                        <Image x:Name="Photo1Image" Width="320" Height="240" Stretch="UniformToFill" />
+                        <Image x:Name="Photo2Image" Width="320" Height="240" Stretch="UniformToFill" />
+                        <Image x:Name="Photo3Image" Width="320" Height="240" Stretch="UniformToFill" />
+                    </StackPanel>
+                </Grid>
 
                 <StackPanel x:Name="ProgressIndicatorPanel"
-                            Grid.Row="1"
+                            Grid.Row="1" 
                             Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            VerticalAlignment="Top" 
+                            VerticalAlignment="Bottom" 
                             Spacing="8"
-                            Margin="0,0,0,15">
-                    <Ellipse x:Name="ProgressDot1" Width="12" Height="12" Fill="Gray"/>
-                    <Ellipse x:Name="ProgressDot2" Width="12" Height="12" Fill="Gray"/>
-                    <Ellipse x:Name="ProgressDot3" Width="12" Height="12" Fill="Gray"/>
+                            Margin="0,10,0,15"
+                            Visibility="Collapsed">
+                    <Ellipse x:Name="ProgressDot1" Width="24" Height="24" Fill="Gray"/>
+                    <Ellipse x:Name="ProgressDot2" Width="24" Height="24" Fill="Gray"/>
+                    <Ellipse x:Name="ProgressDot3" Width="24" Height="24" Fill="Gray"/>
                 </StackPanel>
             </Grid>
 
-
-            <StackPanel x:Name="PhotoGallery"
-                        Grid.Row="1" 
-                        Orientation="Vertical" 
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="10" 
-                        Visibility="Collapsed"
-                        Opacity="0">
-                <Image x:Name="Photo1Image" Width="320" Height="240" Stretch="UniformToFill" />
-                <Image x:Name="Photo2Image" Width="320" Height="240" Stretch="UniformToFill" />
-                <Image x:Name="Photo3Image" Width="320" Height="240" Stretch="UniformToFill" />
-            </StackPanel>
-
-            <StackPanel x:Name="ActionButtonsPanel"
-                        Grid.Row="2"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Bottom"
-                        Spacing="20"
-                        Margin="0,40,0,40"
-                        Visibility="Collapsed"
-                        Opacity="0">
-                <Button x:Name="RetakeButton"
-                        Click="RetakeButton_Click"
-                        Width="140"
-                        Height="160"
-                        Background="White"
-                        Foreground="Black"
-                        CornerRadius="16">
+            <StackPanel x:Name="ActionButtonsPanel" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Spacing="20" Margin="0,40,0,40" Visibility="Collapsed" Opacity="0">
+                <Button x:Name="RetakeButton" Click="RetakeButton_Click" Width="140" Height="160" Background="White" Foreground="Black" CornerRadius="16">
                     <StackPanel>
-                        <FontIcon Glyph="&#xE925;"
-                                  FontSize="72"
-                                  HorizontalAlignment="Center"/>
-                        <TextBlock Text="Retake"
-                                   FontSize="24"
-                                   FontWeight="SemiBold"
-                                   Margin="0,2,0,0"
-                                   TextAlignment="Center"/>
+                        <FontIcon Glyph="&#xE925;" FontSize="72" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Retake" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button x:Name="AcceptButton"
-                        Click="AcceptButton_Click"
-                        Width="240"
-                        Height="160"
-                        Background="White"
-                        Foreground="Black"
-                        CornerRadius="16">
+                <Button x:Name="AcceptButton" Click="AcceptButton_Click" Width="240" Height="160" Background="White" Foreground="Black" CornerRadius="16">
                     <StackPanel>
-                        <FontIcon Glyph="&#xE73E;"
-                                  FontSize="72"
-                                  HorizontalAlignment="Center"/>
-                        <TextBlock Text="OK"
-                                   FontSize="24"
-                                   FontWeight="SemiBold"
-                                   Margin="0,2,0,0"
-                                   TextAlignment="Center"/>
+                        <FontIcon Glyph="&#xE73E;" FontSize="72" HorizontalAlignment="Center"/>
+                        <TextBlock Text="OK" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
 
-            <Grid x:Name="OverlayGrid" 
-                  Grid.RowSpan="3" 
-                  Background="#CC000000" 
-                  Visibility="Collapsed" 
-                  HorizontalAlignment="Stretch" 
-                  VerticalAlignment="Stretch">
-                <TextBlock x:Name="OverlayText" 
-                           Text="Saving..." 
-                           FontSize="48" 
-                           FontWeight="Bold" 
-                           HorizontalAlignment="Center" 
-                           VerticalAlignment="Center" 
-                           Foreground="White"/>
+            <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#CC000000" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <TextBlock x:Name="OverlayText" Text="Saving..." FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
             </Grid>
         </Grid>
     </Grid>
