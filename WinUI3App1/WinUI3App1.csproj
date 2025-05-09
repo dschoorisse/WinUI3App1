@@ -97,4 +97,9 @@
   <ItemGroup>
     <PRIResource Remove="EDSDK\**" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="photobooth_settings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

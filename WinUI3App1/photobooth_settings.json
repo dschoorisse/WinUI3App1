@@ -1,0 +1,29 @@
+﻿{
+  "BackgroundImagePath": "C:\\Users\\NLDAVAN3\\OneDrive - ABB\\Pictures\\background.jpg",
+  "PhotoStripLayoutIndex": 0,
+  "PhotoStripTemplatePath": "",
+  "TimeoutSeconds": 60,
+  "EnablePhotos": true,
+  "EnableVideos": false,
+  "EnablePrinting": true,
+  "ShowPrinterWarnings": true,
+  "SelectedPrinter": "",
+  "InternalLedsMinimum": 20,
+  "InternalLedsMaximum": 100,
+  "ExternalDmxMinimum": 10,
+  "ExternalDmxMaximum": 80,
+  "SelectedComPort": "",
+  "MqttBrokerAddress": "192.168.1.3",
+  "MqttBrokerPort": 1883,
+  "MqttUsername": "videopaal",
+  "MqttPassword": "d8232msn2987sd",
+  "AutoStartPhotoSequence": false,
+  "CountdownDurationSeconds": 3,
+  "CameraResolution": "1920x1080",
+  "MaxVideoDurationSeconds": 15,
+  "LogLevel": "Information",
+  "EnableRemoteAdminViaMqtt": false,
+  "AdminUsernames": [
+    "admin"
+  ]
+}

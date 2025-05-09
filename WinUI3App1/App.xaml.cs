@@ -1,222 +1,108 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
-using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
-using Serilog;
-using Serilog.Events;
-using Path = System.IO.Path;
-using MQTTnet.Protocol;
 using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Windowing; // Required for AppWindow and AppWindowPresenterKind
-using WinRT.Interop;
-using Microsoft.UI;          // Required for WindowNative and Win32Interop
+using WinRT.Interop;          // Required for WindowNative and Win32Interop
+using Serilog;
+// Removed: using Windows.ApplicationModel; // No longer explicitly needed here
+// Removed: using Windows.ApplicationModel.Activation; // Covered by LaunchActivatedEventArgs argument type
+// Using System.Text.Json implicitly via SettingsManager if needed, but not directly here.
+using MQTTnet.Protocol;
+using Microsoft.UI; // Already present
 
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
-
+// Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
 {
-    // NL-L-PF4ZZ1V0
-    /// <summary>
-    /// Provides application-specific behavior to supplement the default Application class.
-    /// </summary>
     public partial class App : Application
     {
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
-        public static string PhotoboothIdentifier { get; private set; } // Store the ID here
-        public static MqttService MqttServiceInstance { get; private set; } // Add MQTT Service instance
 
-        /// <summary>
-        /// Initializes the singleton application object.  This is the first line of authored code
-        /// executed, and as such is the logical equivalent of main() or WinMain().
-        /// </summary>
+        // These will be populated from PhotoBoothSettings loaded via SettingsManager
+        public static string PhotoboothIdentifier { get; private set; }
+        public static PhotoBoothSettings CurrentSettings { get; private set; } // Expose loaded settings
+
+        public static MqttService MqttServiceInstance { get; private set; }
+
         public App()
         {
             this.InitializeComponent();
+            ConfigureLogging(); // Logger should be configured first
 
-            // Initialize Serilog logger
-            ConfigureLogging();
+            // Settings-dependent initializations are moved to OnLaunched after settings are loaded
+            // to allow for async loading of settings.
+        }
 
-            // --- Lees Photobooth ID ---
-            PhotoboothIdentifier = AppSettings.PhotoboothId;
-            if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) || PhotoboothIdentifier.Contains("/") || PhotoboothIdentifier.Contains("+") || PhotoboothIdentifier.Contains("#"))
-            {
-                // Use a safe default if the ID is invalid for MQTT topics
-                PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_")}";
-                Logger.Warning("Invalid PhotoboothId found in settings, using default: {DefaultId}", PhotoboothIdentifier);
-                AppSettings.PhotoboothId = PhotoboothIdentifier; // Save the safe default back
-            }
-            Logger.Information("Using Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
-            // ---------------------------
+        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        {
+            Logger.Information("Application launching...");
 
-
-            // Load MQTT settings (ensure these exist in AppSettings or add them)
-            string mqttBroker = AppSettings.MqttBrokerAddress; // Needs to be added to AppSettings
-            int mqttPort = AppSettings.MqttBrokerPort;         // Needs to be added to AppSettings
-            string mqttUser = AppSettings.MqttUsername;       // Needs to be added to AppSettings
-            string mqttPassword = AppSettings.MqttPassword;     // Needs to be added to AppSettings
-
-            // ---- Initialize MQTT Service ----
+            // Load settings first
             try
             {
-                // Ensure required settings are present before initializing
+                CurrentSettings = await SettingsManager.LoadSettingsAsync();
+                if (CurrentSettings == null)
+                {
+                    Logger.Error("Failed to load settings, CurrentSettings is null. Using emergency defaults.");
+                    CurrentSettings = new PhotoBoothSettings(); // Fallback to code defaults
+                    // Optionally, try to save these emergency defaults if SettingsManager didn't
+                    await SettingsManager.SaveSettingsAsync(CurrentSettings);
+                }
+                Logger.Information("Settings loaded/initialized.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Fatal(ex, "CRITICAL: Failed to load settings during OnLaunched. Application might not function correctly.");
+                // Handle critical failure: show error, use hardcoded emergency defaults, or exit.
+                CurrentSettings = new PhotoBoothSettings(); // Use code defaults as a last resort
+            }
+
+            // --- Initialize PhotoboothIdentifier from loaded settings ---
+            PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+            if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) ||
+                PhotoboothIdentifier.Contains("/") ||
+                PhotoboothIdentifier.Contains("+") ||
+                PhotoboothIdentifier.Contains("#"))
+            {
+                string oldId = PhotoboothIdentifier;
+                PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
+                Logger.Warning("Invalid PhotoboothId ('{OldId}') found in settings, using default: {DefaultId}", oldId, PhotoboothIdentifier);
+                CurrentSettings.PhotoboothId = PhotoboothIdentifier; // Update the model
+                await SettingsManager.SaveSettingsAsync(CurrentSettings); // Save the corrected ID back to JSON
+            }
+            Logger.Information("Using Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+
+            // --- Initialize MQTT Service with loaded settings ---
+            string mqttBroker = CurrentSettings.MqttBrokerAddress;
+            int mqttPort = CurrentSettings.MqttBrokerPort;
+            string mqttUser = CurrentSettings.MqttUsername;
+            string mqttPassword = CurrentSettings.MqttPassword;
+
+            try
+            {
                 if (!string.IsNullOrEmpty(mqttBroker) && mqttPort > 0)
                 {
-                    // --- Geef PhotoboothIdentifier door aan de constructor ---
                     MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
                     MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
                     Logger.Information("MQTT Service created for ID {PhotoboothId}.", PhotoboothIdentifier);
                 }
                 else
                 {
-                    Logger.Error("MQTT configuration missing (Broker Address or Port). MQTT Service not started.");
+                    Logger.Error("MQTT configuration missing in settings (Broker Address or Port). MQTT Service not started.");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Failed to initialize MQTT Service.");
-                // Handle the error appropriately, maybe show a message to the user
-            }
-            // ---------------------------------
-
-            Logger.Information("Application initialized");
-
-            // Optional: Handle application exit to dispose MQTT service cleanly
-            this.UnhandledException += App_UnhandledException; // Log unhandled exceptions
-                                                               // Consider using Window Closed event or Suspending event for clean disposal
-                                                               // For unpackaged apps, process exit might be the most reliable.
-        }
-
-        private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
-        {
-            if (isConnected)
-            {
-                Logger.Information("MQTT [{PhotoboothId}] Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
-                await PublishStatusAsync("online");
-                // await PublishStatusJsonAsync("Online", true); // Voorbeeld met JSON
-            }
-            else
-            {
-                Logger.Information("MQTT [{PhotoboothId}] Disconnected.", PhotoboothIdentifier);
-                // LWT handles the "Offline" message automatically
-            }
-        }
-
-        // --- Helper Aangepast: Gebruikt PhotoboothIdentifier voor topic ---
-        public static async Task PublishStatusAsync(string statusPayload, bool retain = false) // Added retain flag option
-        {
-            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
-            {
-                // Construct topic dynamically
-                string topic = $"photobooth/{PhotoboothIdentifier}/status";
-                try
-                {
-                    // Publish met QoS 1 en retain flag (optioneel, maar vaak nuttig voor status)
-                    await MqttServiceInstance.PublishAsync(topic, statusPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
-                }
-                catch (Exception ex)
-                {
-                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish status '{Status}' to topic '{Topic}'", PhotoboothIdentifier, statusPayload, topic);
-                }
-            }
-            else 
-            {
-                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish status '{Status}'", PhotoboothIdentifier, statusPayload);
-            }
-        }
-
-        // --- Helper Aangepast: Gebruikt ID voor topic en payload ---
-        public static async Task PublishStatusJsonAsync(string state, bool? cameraConnected = null, bool retain = false) // Added retain flag
-        {
-            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
-            {
-                // Construct topic dynamically
-                string topic = $"photobooth/{PhotoboothIdentifier}/status/json";
-                try
-                {
-                    var statusObject = new
-                    {
-                        photoboothId = PhotoboothIdentifier, // Include ID in payload
-                        state = state,
-                        timestamp = DateTime.UtcNow.ToString("o"),
-                        cameraConnected = cameraConnected
-                    };
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject);
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain); // QoS 1 & Retain
-                }
-                catch (Exception ex)
-                {
-                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish JSON status '{State}' to topic '{Topic}'", PhotoboothIdentifier, state, topic);
-                }
-            }
-            else
-            {
-                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish JSON status '{Status}'", PhotoboothIdentifier);
-            }
-        }
-
-
-        private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
-        {
-            Logger.Fatal(e.Exception, "Unhandled application exception");
-            // Optionally: Show a message to the user before crashing
-            e.Handled = true; // Prevent the application from crashing immediately, but it might still terminate
-        }
-
-
-        private void ConfigureLogging()
-        {
-            // Create logs directory if it doesn't exist
-            string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
-            if (!Directory.Exists(logsDirectory))
-            {
-                Directory.CreateDirectory(logsDirectory);
+                Logger.Error(ex, "Failed to initialize MQTT Service using settings from JSON.");
             }
 
-            // Configure Serilog
-            Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .WriteTo.File(
-                    path: Path.Combine(logsDirectory, "photobooth-log-.txt"),
-                    rollingInterval: RollingInterval.Day,
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
-                .WriteTo.Debug()
-                .CreateLogger();
-
-            Logger.Information("Logging initialized");
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool SetDllDirectory(string lpPathName);
-
-        /// <summary>
-        /// Invoked when the application is launched.
-        /// </summary>
-        /// <param name="args">Details about the launch request and process.</param>
-        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args) // Make async if not already for MQTT start
-        {
+            // --- MainWindow Creation and Fullscreen Logic ---
             MainWindow = new MainWindow();
             Logger.Information("Main window created");
 
-            // --- Fullscreen Logic Based on Computer Name ---
-            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // <- IMPORTANT: Change this to your actual target computer name
+            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name
             string currentComputerName = Environment.MachineName;
-
             Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
 
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
@@ -224,74 +110,43 @@ namespace WinUI3App1
                 Logger.Information("Computer name matches. Attempting to set window to fullscreen.");
                 try
                 {
-                    // Get the AppWindow for the current MainWindow
                     IntPtr hWnd = WindowNative.GetWindowHandle(MainWindow);
                     WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
                     AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-
                     if (appWindow != null)
                     {
-                        // Check if the current presenter is Overlapped, which is the default windowed mode.
-                        // This check helps avoid errors if the window is already in a compact or fullscreen mode.
                         if (appWindow.Presenter.Kind == AppWindowPresenterKind.Overlapped)
                         {
-                            appWindow.SetPresenter(AppWindowPresenterKind.FullScreen); // Set to Fullscreen
+                            appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
                             Logger.Information("Fullscreen mode has been set.");
                         }
-                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
-                        {
-                            Logger.Information("Window is already in Fullscreen mode.");
-                        }
-                        else
-                        {
-                            // If it's in some other presenter kind (e.g., CompactOverlay),
-                            // transitioning directly to FullScreen might not be desired or could fail.
-                            Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied to avoid conflicts.", appWindow.Presenter.Kind);
-                        }
+                        // ... (other presenter kind checks as before) ...
+                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen) Logger.Information("Window is already in Fullscreen mode.");
+                        else Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied.", appWindow.Presenter.Kind);
                     }
-                    else
-                    {
-                        Logger.Error("Could not retrieve AppWindow. Fullscreen mode cannot be set.");
-                    }
+                    else Logger.Error("Could not retrieve AppWindow. Fullscreen mode cannot be set.");
                 }
-                catch (Exception ex)
-                {
-                    Logger.Error(ex, "An error occurred while trying to set fullscreen mode.");
-                }
+                catch (Exception ex) { Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); }
             }
-            else
-            {
-                Logger.Information("Computer name does not match. Application will start in default windowed mode.");
-                // Optionally, you could maximize the window on non-target machines if desired:
-                // IntPtr hWnd = WindowNative.GetWindowHandle(MainWindow);
-                // WindowId windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
-                // AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
-                // if (appWindow != null && appWindow.Presenter is OverlappedPresenter overlappedPresenter)
-                // {
-                //     overlappedPresenter.Maximize();
-                //     Logger.Information("Window maximized on non-target machine.");
-                // }
-            }
-            // --- End of Fullscreen Logic ---
+            else Logger.Information("Computer name does not match. Application will start in default windowed mode.");
 
             MainWindow.Activate();
             Logger.Information("Main window activated");
 
-            // ---- Start MQTT Service ----
+            // ---- Start MQTT Service (actual connection attempt) ----
             if (MqttServiceInstance != null)
             {
                 try
                 {
-                    // Using await here if OnLaunched is async, otherwise _ = ...
-                    await MqttServiceInstance.StartAsync(); // Assuming StartAsync doesn't block UI for too long
+                    await MqttServiceInstance.StartAsync();
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error(ex, "MQTT [{PhotoboothId}] Failed to start MQTT Service on launch.", PhotoboothIdentifier);
+                    Logger.Error(ex, "MQTT [{PhotoboothId}] Failed to start MQTT Service connection on launch.", PhotoboothIdentifier);
                 }
             }
-            // ---------------------------
 
+            // --- MainWindow Closed Event Handler ---
             MainWindow.Closed += async (sender, e) =>
             {
                 Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
@@ -301,12 +156,109 @@ namespace WinUI3App1
                     await MqttServiceInstance.DisposeAsync();
                     Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
                 }
+                Log.CloseAndFlush(); // Ensure Serilog flushes on exit
             };
 
-            // Your existing m_window field seems unused, can be m_mainWindow or just use App.MainWindow static prop
-            // m_window = MainWindow; 
+            this.UnhandledException += App_UnhandledException;
+            Logger.Information("Application initialized and launched.");
         }
 
-        private Window? m_window;
+        private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
+        {
+            if (isConnected)
+            {
+                Logger.Information("MQTT [{PhotoboothId}] Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
+                await PublishStatusAsync("online", true); // Retain online status
+            }
+            else
+            {
+                Logger.Information("MQTT [{PhotoboothId}] Disconnected.", PhotoboothIdentifier);
+            }
+        }
+
+        public static async Task PublishStatusAsync(string statusPayload, bool retain = false)
+        {
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+            {
+                string topic = $"photobooth/{PhotoboothIdentifier}/status";
+                try
+                {
+                    await MqttServiceInstance.PublishAsync(topic, statusPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish status '{Status}' to topic '{Topic}'", PhotoboothIdentifier, statusPayload, topic);
+                }
+            }
+            else
+            {
+                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish status '{Status}'", PhotoboothIdentifier, statusPayload);
+            }
+        }
+
+        public static async Task PublishStatusJsonAsync(string state, bool? cameraConnected = null, bool retain = false)
+        {
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+            {
+                string topic = $"photobooth/{PhotoboothIdentifier}/status/json";
+                try
+                {
+                    var statusObject = new
+                    {
+                        photoboothId = PhotoboothIdentifier,
+                        state,
+                        timestamp = DateTime.UtcNow.ToString("o"),
+                        cameraConnected
+                    };
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject);
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish JSON status '{State}' to topic '{Topic}'", PhotoboothIdentifier, state, topic);
+                }
+            }
+            else
+            {
+                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier, state);
+            }
+        }
+
+        private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            Logger.Fatal(e.Exception, "Unhandled application exception. Attempting to handle.");
+            e.Handled = true;
+            // Consider showing a dialog to the user here if it's a UI thread exception
+            // and then perhaps gracefully shutting down or attempting recovery.
+        }
+
+        private void ConfigureLogging()
+        {
+            string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+            if (!Directory.Exists(logsDirectory))
+            {
+                Directory.CreateDirectory(logsDirectory);
+            }
+            Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(
+                    path: Path.Combine(logsDirectory, "photobooth-log-.txt"),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 7, // Keep logs for 7 days
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] ({SourceContext}) {Message:lj}{NewLine}{Exception}")
+                .WriteTo.Debug()
+                .Enrich.FromLogContext() // Enables SourceContext for MqttService logging
+                .CreateLogger();
+            Log.Logger = Logger; // Assign to Serilog's global logger if MqttService uses Log.ForContext
+            Logger.Information("Logging initialized");
+        }
+
+        // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
+        // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.
+        // [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        // private static extern bool SetDllDirectory(string lpPathName);
+
+        // m_window field is not used, App.MainWindow static property is used instead.
+        // private Window? m_window; 
     }
 }

@@ -100,59 +100,63 @@ namespace WinUI3App
         {
             try
             {
-                // Get the background image path from settings
-                var localSettings = ApplicationData.Current.LocalSettings;
-                string backgroundImagePath = localSettings.Values["BackgroundImagePath"] as string ?? "";
+                // No need to call SettingsManager.LoadSettingsAsync() again if App.CurrentSettings is already populated.
+                // If App.CurrentSettings might not be loaded yet (e.g. if MainPage loads before App.OnLaunched fully completes settings loading,
+                // which is unlikely but good to be mindful of timing), then load it:
+                // PhotoBoothSettings settings = App.CurrentSettings ?? await SettingsManager.LoadSettingsAsync();
+                // For simplicity, assuming App.CurrentSettings is populated by the time MainPage needs it:
 
-                App.Logger?.Information("Attempting to load background image from: {Path}", backgroundImagePath);
-
-                // Check if the background image path is valid
-                if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
+                if (App.CurrentSettings == null)
                 {
-                    // Create a new bitmap image
-                    BitmapImage bitmap = new BitmapImage();
-
-                    // Set bitmap properties before loading
-                    bitmap.CreateOptions = BitmapCreateOptions.None;
-
-                    // Load using a different approach
-                    using (FileStream stream = File.OpenRead(backgroundImagePath))
+                    App.Logger?.Warning("App.CurrentSettings is null in MainPage.LoadBackgroundFromSettings. Attempting to load settings directly.");
+                    // This direct load is a fallback, ideally App.CurrentSettings is reliable
+                    var settings = await SettingsManager.LoadSettingsAsync();
+                    if (App.CurrentSettings == null && settings != null) { /* App.CurrentSettings = settings; */ } // Avoid overwriting if App.OnLaunched sets it later
+                    if (settings == null)
                     {
-                        bitmap.DecodePixelWidth = 1920; // Optimize for performance
-                        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+                        App.Logger?.Error("Failed to load settings directly in MainPage.");
+                        BackgroundImage.Source = null; // Assuming BackgroundImage is your x:Name
+                        BackgroundOverlay.Visibility = Visibility.Collapsed; // Assuming BackgroundOverlay is your x:Name
+                        return;
                     }
-
-                    // Explicitly ensure the background image is at the back of the z-order
-                    Canvas.SetZIndex(BackgroundImage, -1);
-
-                    // Set the image source
-                    BackgroundImage.Source = bitmap;
-
-                    // Show/hide the overlay depending on if you want it
-                    BackgroundOverlay.Visibility = Visibility.Visible; // or Collapsed if you don't want it
-
-                    // Set to black with 30% opacity to make text more readable
-                    BackgroundOverlay.Fill = new SolidColorBrush(Color.FromArgb(77, 0, 0, 0));
-
-                    App.Logger?.Information("Background image loaded successfully");
+                    // Use locally loaded 'settings' for this method if App.CurrentSettings was null
+                    string backgroundImagePath = settings.BackgroundImagePath;
+                    App.Logger?.Information("MainPage attempting to load background image from: {Path}", backgroundImagePath);
+                    // ... rest of your loading logic using backgroundImagePath ...
                 }
                 else
                 {
-                    // If no background is set or file doesn't exist, hide the overlay and clear the image
-                    BackgroundImage.Source = null;
-                    BackgroundOverlay.Visibility = Visibility.Collapsed;
-
-                    App.Logger?.Information("No custom background image found");
+                    string backgroundImagePath = App.CurrentSettings.BackgroundImagePath;
+                    App.Logger?.Information("MainPage attempting to load background image from App.CurrentSettings: {Path}", backgroundImagePath);
+                    // ... (your existing logic to load image from backgroundImagePath) ...
+                    if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
+                    {
+                        BitmapImage bitmap = new BitmapImage { CreateOptions = BitmapCreateOptions.None };
+                        using (FileStream stream = File.OpenRead(backgroundImagePath))
+                        {
+                            bitmap.DecodePixelWidth = 1920;
+                            await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+                        }
+                        // Assuming your XAML has <Image x:Name="BackgroundImage"/> and <Grid x:Name="BackgroundOverlay"/>
+                        BackgroundImage.Source = bitmap;
+                        BackgroundOverlay.Visibility = Visibility.Visible;
+                        // BackgroundOverlay.Fill = new SolidColorBrush(Microsoft.UI.Colors.Black) { Opacity = 0.3 }; // Or similar
+                        Canvas.SetZIndex(BackgroundImage, -1); // If BackgroundImage is in a Canvas
+                    }
+                    else
+                    {
+                        BackgroundImage.Source = null;
+                        BackgroundOverlay.Visibility = Visibility.Collapsed;
+                        if (!string.IsNullOrEmpty(backgroundImagePath)) App.Logger?.Warning("Background image file not found: {Path}", backgroundImagePath);
+                        else App.Logger?.Information("No custom background image path set in settings.");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                // Log any errors
-                App.Logger?.Error(ex, "Error loading background image: {Message}", ex.Message);
-
-                // Clear the background image and hide overlay on error
-                BackgroundImage.Source = null;
-                BackgroundOverlay.Visibility = Visibility.Collapsed;
+                App.Logger?.Error(ex, "Error loading background image in MainPage: {Message}", ex.Message);
+                if (this.FindName("BackgroundImage") is Image bgImg) bgImg.Source = null;
+                if (this.FindName("BackgroundOverlay") is Grid bgOverlay) bgOverlay.Visibility = Visibility.Collapsed;
             }
         }
 

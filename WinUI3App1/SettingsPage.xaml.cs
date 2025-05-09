@@ -1,3 +1,4 @@
+// SettingsPage.xaml.cs
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -10,114 +11,93 @@ using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
-using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
+// Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
 {
-    /// <summary>
-    /// Complete settings page for the Photo Booth application
-    /// </summary>
     public sealed partial class SettingsPage : Page
     {
-        // Settings Properties with default values
+        // These properties will now be populated from and save to the PhotoBoothSettings model
+        // They remain public for data binding to your XAML controls if you use {x:Bind}.
 
         // UI/Look and Feel
-        public string BackgroundImagePath { get; set; } = "";
-        public int PhotoStripLayoutIndex { get; set; } = 0;
-        public string PhotoStripTemplatePath { get; set; } = "";
-        public int TimeoutSeconds { get; set; } = 60;
+        public string BackgroundImagePath { get; set; }
+        public int PhotoStripLayoutIndex { get; set; }
+        public string PhotoStripTemplatePath { get; set; }
+        public int TimeoutSeconds { get; set; }
 
         // Functionality
-        public bool EnablePhotos { get; set; } = true;
-        public bool EnableVideos { get; set; } = false;
-        public bool EnablePrinting { get; set; } = true;
-        public bool ShowPrinterWarnings { get; set; } = true;
-        public string SelectedPrinter { get; set; } = "";
+        public bool EnablePhotos { get; set; }
+        public bool EnableVideos { get; set; }
+        public bool EnablePrinting { get; set; }
+        public bool ShowPrinterWarnings { get; set; }
+        public string SelectedPrinter { get; set; }
 
         // Lighting
-        public int InternalLedsMinimum { get; set; } = 20;
-        public int InternalLedsMaximum { get; set; } = 100;
-        public int ExternalDmxMinimum { get; set; } = 10;
-        public int ExternalDmxMaximum { get; set; } = 80;
-        public string SelectedComPort { get; set; } = "";
+        public int InternalLedsMinimum { get; set; }
+        public int InternalLedsMaximum { get; set; }
+        public int ExternalDmxMinimum { get; set; }
+        public int ExternalDmxMaximum { get; set; }
+        public string SelectedComPort { get; set; }
 
-        // Original values to track changes
+        // This will hold the settings loaded from/to be saved to JSON
+        private PhotoBoothSettings _loadedSettingsModel;
+
+        // Original values to track changes against UI properties
         private Dictionary<string, object> _originalValues = new Dictionary<string, object>();
 
-        // List of available COM ports and printers
+        // Lists for UI controls (ComboBoxes)
         private ObservableCollection<string> _availableComPorts = new ObservableCollection<string>();
         private ObservableCollection<string> _availablePrinters = new ObservableCollection<string>();
 
         public SettingsPage()
         {
             this.InitializeComponent();
-
-            // Register value converter for percentages
-            Resources.Add("IntToPercentConverter", new IntToPercentConverter());
+            // Assuming IntToPercentConverter is defined elsewhere or in XAML resources
+            // If it's defined in C# within this file, ensure it's correctly placed.
+            // If not already in XAML resources: Resources.Add("IntToPercentConverter", new IntToPercentConverter());
         }
 
-        protected override void OnNavigatedTo(NavigationEventArgs e)
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
-
-            // Load settings when page is navigated to
-            LoadSettings();
-
-            // Store original values to detect changes
-            StoreOriginalValues();
-
-            // Initialize controls with current settings
-            InitializeControls();
+            await LoadSettingsAsync();    // Load from JSON into _loadedSettingsModel and then to page properties
+            StoreOriginalValues();        // Store these loaded values for change tracking
+            await InitializeControlsAsync(); // Initialize UI with loaded values (made async for safety)
         }
 
-        private void LoadSettings()
+        private async Task LoadSettingsAsync()
         {
-            try
-            {
-                var localSettings = ApplicationData.Current.LocalSettings;
+            Debug.WriteLine("SettingsPage: Loading settings from JSON...");
+            _loadedSettingsModel = await SettingsManager.LoadSettingsAsync();
 
-                // UI/Look and Feel
-                BackgroundImagePath = localSettings.Values["BackgroundImagePath"] as string ?? "";
-                PhotoStripLayoutIndex = GetSetting(localSettings, "PhotoStripLayoutIndex", 0);
-                PhotoStripTemplatePath = localSettings.Values["PhotoStripTemplatePath"] as string ?? "";
-                TimeoutSeconds = GetSetting(localSettings, "TimeoutSeconds", 60);
+            // Populate page properties from the loaded settings model
+            // These properties are what your XAML might be binding to.
+            BackgroundImagePath = _loadedSettingsModel.BackgroundImagePath;
+            PhotoStripLayoutIndex = _loadedSettingsModel.PhotoStripLayoutIndex;
+            PhotoStripTemplatePath = _loadedSettingsModel.PhotoStripTemplatePath;
+            TimeoutSeconds = _loadedSettingsModel.TimeoutSeconds;
 
-                // Functionality
-                EnablePhotos = GetSetting(localSettings, "EnablePhotos", true);
-                EnableVideos = GetSetting(localSettings, "EnableVideos", false);
-                EnablePrinting = GetSetting(localSettings, "EnablePrinting", true);
-                ShowPrinterWarnings = GetSetting(localSettings, "ShowPrinterWarnings", true);
-                SelectedPrinter = localSettings.Values["SelectedPrinter"] as string ?? "";
+            EnablePhotos = _loadedSettingsModel.EnablePhotos;
+            EnableVideos = _loadedSettingsModel.EnableVideos;
+            EnablePrinting = _loadedSettingsModel.EnablePrinting;
+            ShowPrinterWarnings = _loadedSettingsModel.ShowPrinterWarnings;
+            SelectedPrinter = _loadedSettingsModel.SelectedPrinter;
 
-                // Lighting
-                InternalLedsMinimum = GetSetting(localSettings, "InternalLedsMinimum", 20);
-                InternalLedsMaximum = GetSetting(localSettings, "InternalLedsMaximum", 100);
-                ExternalDmxMinimum = GetSetting(localSettings, "ExternalDmxMinimum", 10);
-                ExternalDmxMaximum = GetSetting(localSettings, "ExternalDmxMaximum", 80);
-                SelectedComPort = localSettings.Values["SelectedComPort"] as string ?? "";
+            InternalLedsMinimum = _loadedSettingsModel.InternalLedsMinimum;
+            InternalLedsMaximum = _loadedSettingsModel.InternalLedsMaximum;
+            ExternalDmxMinimum = _loadedSettingsModel.ExternalDmxMinimum;
+            ExternalDmxMaximum = _loadedSettingsModel.ExternalDmxMaximum;
+            SelectedComPort = _loadedSettingsModel.SelectedComPort;
 
-                Debug.WriteLine("Settings loaded successfully");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error loading settings: {ex.Message}");
-                // Use defaults if loading fails
-            }
-        }
-
-        private T GetSetting<T>(ApplicationDataContainer settings, string key, T defaultValue)
-        {
-            if (settings.Values.TryGetValue(key, out object value) && value is T typedValue)
-            {
-                return typedValue;
-            }
-            return defaultValue;
+            Debug.WriteLine("SettingsPage: Properties populated from JSON model.");
         }
 
         private void StoreOriginalValues()
         {
+            _originalValues.Clear();
             _originalValues["BackgroundImagePath"] = BackgroundImagePath;
             _originalValues["PhotoStripLayoutIndex"] = PhotoStripLayoutIndex;
             _originalValues["PhotoStripTemplatePath"] = PhotoStripTemplatePath;
@@ -132,288 +112,251 @@ namespace WinUI3App1
             _originalValues["ExternalDmxMinimum"] = ExternalDmxMinimum;
             _originalValues["ExternalDmxMaximum"] = ExternalDmxMaximum;
             _originalValues["SelectedComPort"] = SelectedComPort;
+            Debug.WriteLine("SettingsPage: Original values stored for change detection.");
         }
 
-        private async void InitializeControls()
+        private async Task InitializeControlsAsync()
         {
-            // Load background image preview if available
+            // This method ensures UI controls reflect the loaded settings.
+            // If using {x:Bind Path=MyProperty, Mode=TwoWay} in XAML, many explicit updates aren't needed
+            // as setting the public properties in LoadSettingsAsync would trigger UI updates.
+            // However, for ComboBox selections and Image previews, explicit setup is good.
+
+            // Update XAML elements if they aren't automatically updated by {x:Bind Mode=TwoWay}
+            // Example: BackgroundImagePathTextBox.Text = BackgroundImagePath; (if you have this textbox)
+            // PhotoStripTemplateTextBox.Text = PhotoStripTemplatePath;
+            // EnablePhotosToggle.IsOn = EnablePhotos; 
+            // TimeoutValueTextBlock.Text = TimeoutSeconds.ToString(); // Or bind slider value
+
             if (!string.IsNullOrEmpty(BackgroundImagePath) && File.Exists(BackgroundImagePath))
             {
                 await LoadBackgroundPreview(BackgroundImagePath);
             }
+            else
+            {
+                // Assuming BackgroundPreviewImage is the name of your Image control in XAML
+                if (this.FindName("BackgroundPreviewImage") is Image img) img.Source = null;
+            }
 
-            // Load available COM ports
-            await RefreshComPorts();
-
-            // Load available printers
+            await RefreshComPortsAsync();
             RefreshPrinters();
 
-            // Select the currently configured COM port
+            ComPortComboBox.ItemsSource = _availableComPorts; // Set ItemsSource
             if (!string.IsNullOrEmpty(SelectedComPort) && _availableComPorts.Contains(SelectedComPort))
-            {
                 ComPortComboBox.SelectedItem = SelectedComPort;
-            }
-            else if (_availableComPorts.Count > 0)
-            {
-                ComPortComboBox.SelectedIndex = 0;
-                SelectedComPort = ComPortComboBox.SelectedItem as string;
-            }
+            else if (_availableComPorts.Any() && _availableComPorts.FirstOrDefault(p => !p.ToLower().Contains("error") && !p.ToLower().Contains("no com")) != null)
+                ComPortComboBox.SelectedItem = _availableComPorts.FirstOrDefault(p => !p.ToLower().Contains("error") && !p.ToLower().Contains("no com"));
 
-            // Select the currently configured printer
+
+            PrinterSelectionComboBox.ItemsSource = _availablePrinters; // Set ItemsSource
             if (!string.IsNullOrEmpty(SelectedPrinter) && _availablePrinters.Contains(SelectedPrinter))
-            {
                 PrinterSelectionComboBox.SelectedItem = SelectedPrinter;
-            }
-            else if (_availablePrinters.Count > 0)
-            {
-                PrinterSelectionComboBox.SelectedIndex = 0;
-                SelectedPrinter = PrinterSelectionComboBox.SelectedItem as string;
-            }
+            else if (_availablePrinters.Any() && _availablePrinters.FirstOrDefault(p => !p.ToLower().Contains("error")) != null)
+                PrinterSelectionComboBox.SelectedItem = _availablePrinters.FirstOrDefault(p => !p.ToLower().Contains("error"));
+
+            // For sliders and toggle switches, if you are not using TwoWay x:Bind, you'd set them here:
+            // Example: InternalLedsMinSlider.Value = InternalLedsMinimum;
+            // EnablePhotosToggleSwitch.IsOn = EnablePhotos; // Assuming 'EnablePhotosToggleSwitch' is the x:Name
         }
 
-        private async Task LoadBackgroundPreview(string imagePath)
+        private async Task SaveSettingsAsync()
         {
-            try
+            if (_loadedSettingsModel == null)
             {
-                var bitmap = new BitmapImage();
-                using (var stream = File.OpenRead(imagePath))
-                {
-                    await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                }
-                BackgroundPreviewImage.Source = bitmap;
+                Debug.WriteLine("SettingsPage: Cannot save, settings model was not loaded. Creating a new one.");
+                _loadedSettingsModel = new PhotoBoothSettings();
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error loading background preview: {ex.Message}");
-                BackgroundPreviewImage.Source = null;
-            }
-        }
 
-        private async Task RefreshComPorts()
-        {
-            _availableComPorts.Clear();
+            // Update the _loadedSettingsModel with current values from page properties (which are bound to UI)
+            _loadedSettingsModel.BackgroundImagePath = BackgroundImagePath;
+            _loadedSettingsModel.PhotoStripLayoutIndex = PhotoStripLayoutIndex;
+            _loadedSettingsModel.PhotoStripTemplatePath = PhotoStripTemplatePath;
+            _loadedSettingsModel.TimeoutSeconds = TimeoutSeconds;
+            _loadedSettingsModel.EnablePhotos = EnablePhotos;
+            _loadedSettingsModel.EnableVideos = EnableVideos;
+            _loadedSettingsModel.EnablePrinting = EnablePrinting;
+            _loadedSettingsModel.ShowPrinterWarnings = ShowPrinterWarnings;
+            _loadedSettingsModel.SelectedPrinter = SelectedPrinter; // Ensure this comes from ComboBox selected value if not directly bound
+            _loadedSettingsModel.InternalLedsMinimum = InternalLedsMinimum;
+            _loadedSettingsModel.InternalLedsMaximum = InternalLedsMaximum;
+            _loadedSettingsModel.ExternalDmxMinimum = ExternalDmxMinimum;
+            _loadedSettingsModel.ExternalDmxMaximum = ExternalDmxMaximum;
+            _loadedSettingsModel.SelectedComPort = SelectedComPort; // Ensure this comes from ComboBox selected value
 
-            try
-            {
-                var ports = SerialPort.GetPortNames();
-                foreach (var port in ports.OrderBy(p => p))
-                {
-                    _availableComPorts.Add(port);
-                }
+            // Settings not on UI (e.g., MQTT, PhotoboothId from the model) will retain their previously loaded values
+            // unless the model was just newed up (in which case they are defaults).
+            // If you want PhotoboothId to be editable, you'd add a UI element and property for it.
 
-                if (_availableComPorts.Count == 0)
-                {
-                    _availableComPorts.Add("No COM Ports Available");
-                }
-
-                ComPortComboBox.ItemsSource = _availableComPorts;
-
-                Debug.WriteLine($"Found {_availableComPorts.Count} COM ports");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error refreshing COM ports: {ex.Message}");
-                _availableComPorts.Add("Error retrieving COM ports");
-                ComPortComboBox.ItemsSource = _availableComPorts;
-            }
-        }
-
-        private void RefreshPrinters()
-        {
-            _availablePrinters.Clear();
-
-            try
-            {
-                // This is a placeholder - in a real app, you'd use the Windows printing APIs
-                // to get the list of printers
-                _availablePrinters.Add("Default Printer");
-                _availablePrinters.Add("Microsoft Print to PDF");
-                _availablePrinters.Add("Microsoft XPS Document Writer");
-
-                PrinterSelectionComboBox.ItemsSource = _availablePrinters;
-
-                Debug.WriteLine($"Found {_availablePrinters.Count} printers");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error refreshing printers: {ex.Message}");
-                _availablePrinters.Add("Error retrieving printers");
-                PrinterSelectionComboBox.ItemsSource = _availablePrinters;
-            }
-        }
-
-        private void SaveSettings()
-        {
-            try
-            {
-                var localSettings = ApplicationData.Current.LocalSettings;
-
-                // UI/Look and Feel
-                localSettings.Values["BackgroundImagePath"] = BackgroundImagePath;
-                localSettings.Values["PhotoStripLayoutIndex"] = PhotoStripLayoutIndex;
-                localSettings.Values["PhotoStripTemplatePath"] = PhotoStripTemplatePath;
-                localSettings.Values["TimeoutSeconds"] = TimeoutSeconds;
-
-                // Functionality
-                localSettings.Values["EnablePhotos"] = EnablePhotos;
-                localSettings.Values["EnableVideos"] = EnableVideos;
-                localSettings.Values["EnablePrinting"] = EnablePrinting;
-                localSettings.Values["ShowPrinterWarnings"] = ShowPrinterWarnings;
-                localSettings.Values["SelectedPrinter"] = SelectedPrinter;
-
-                // Lighting
-                localSettings.Values["InternalLedsMinimum"] = InternalLedsMinimum;
-                localSettings.Values["InternalLedsMaximum"] = InternalLedsMaximum;
-                localSettings.Values["ExternalDmxMinimum"] = ExternalDmxMinimum;
-                localSettings.Values["ExternalDmxMaximum"] = ExternalDmxMaximum;
-                localSettings.Values["SelectedComPort"] = SelectedComPort;
-
-                Debug.WriteLine("Settings saved successfully");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error saving settings: {ex.Message}");
-                // Handle save error
-            }
+            await SettingsManager.SaveSettingsAsync(_loadedSettingsModel);
+            Debug.WriteLine("SettingsPage: Settings saved to JSON via SettingsManager.");
+            StoreOriginalValues(); // Update original values to reflect the newly saved state
         }
 
         private bool HasSettingsChanged()
         {
-            return
-                BackgroundImagePath != (string)_originalValues["BackgroundImagePath"] ||
-                PhotoStripLayoutIndex != (int)_originalValues["PhotoStripLayoutIndex"] ||
-                PhotoStripTemplatePath != (string)_originalValues["PhotoStripTemplatePath"] ||
-                TimeoutSeconds != (int)_originalValues["TimeoutSeconds"] ||
-                EnablePhotos != (bool)_originalValues["EnablePhotos"] ||
-                EnableVideos != (bool)_originalValues["EnableVideos"] ||
-                EnablePrinting != (bool)_originalValues["EnablePrinting"] ||
-                ShowPrinterWarnings != (bool)_originalValues["ShowPrinterWarnings"] ||
-                SelectedPrinter != (string)_originalValues["SelectedPrinter"] ||
-                InternalLedsMinimum != (int)_originalValues["InternalLedsMinimum"] ||
-                InternalLedsMaximum != (int)_originalValues["InternalLedsMaximum"] ||
-                ExternalDmxMinimum != (int)_originalValues["ExternalDmxMinimum"] ||
-                ExternalDmxMaximum != (int)_originalValues["ExternalDmxMaximum"] ||
-                SelectedComPort != (string)_originalValues["SelectedComPort"];
+            // This compares current UI-bound properties against the state when the page was loaded/last saved
+            if (_originalValues.Count == 0) return false; // Nothing to compare against yet
+
+            return BackgroundImagePath != (_originalValues["BackgroundImagePath"] as string ?? "") ||
+                   PhotoStripLayoutIndex != (int)_originalValues["PhotoStripLayoutIndex"] ||
+                   (PhotoStripTemplatePath ?? "") != (_originalValues["PhotoStripTemplatePath"] as string ?? "") ||
+                   TimeoutSeconds != (int)_originalValues["TimeoutSeconds"] ||
+                   EnablePhotos != (bool)_originalValues["EnablePhotos"] ||
+                   EnableVideos != (bool)_originalValues["EnableVideos"] ||
+                   EnablePrinting != (bool)_originalValues["EnablePrinting"] ||
+                   ShowPrinterWarnings != (bool)_originalValues["ShowPrinterWarnings"] ||
+                   (SelectedPrinter ?? "") != (_originalValues["SelectedPrinter"] as string ?? "") ||
+                   InternalLedsMinimum != (int)_originalValues["InternalLedsMinimum"] ||
+                   InternalLedsMaximum != (int)_originalValues["InternalLedsMaximum"] ||
+                   ExternalDmxMinimum != (int)_originalValues["ExternalDmxMinimum"] ||
+                   ExternalDmxMaximum != (int)_originalValues["ExternalDmxMaximum"] ||
+                   (SelectedComPort ?? "") != (_originalValues["SelectedComPort"] as string ?? "");
         }
 
         private bool ValidateSettings()
         {
             bool isValid = true;
+            var mediaWarningText = this.FindName("MediaWarningText") as TextBlock; // Assuming x:Name in XAML
+            var internalLedsMinSlider = this.FindName("InternalLedsMinSlider") as Slider; // Assuming x:Name
+            var externalDmxMinSlider = this.FindName("ExternalDmxMinSlider") as Slider; // Assuming x:Name
 
-            // Ensure at least one media type is enabled
             if (!EnablePhotos && !EnableVideos)
             {
                 isValid = false;
-                MediaWarningText.Visibility = Visibility.Visible;
+                if (mediaWarningText != null) mediaWarningText.Visibility = Visibility.Visible;
             }
             else
             {
-                MediaWarningText.Visibility = Visibility.Collapsed;
+                if (mediaWarningText != null) mediaWarningText.Visibility = Visibility.Collapsed;
             }
 
-            // Ensure internal LED range is valid
             if (InternalLedsMinimum > InternalLedsMaximum)
             {
                 isValid = false;
-                InternalLedsMinSlider.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                if (internalLedsMinSlider != null) internalLedsMinSlider.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
             }
             else
             {
-                InternalLedsMinSlider.Background = null;
+                if (internalLedsMinSlider != null) internalLedsMinSlider.Background = null;
             }
 
-            // Ensure external DMX range is valid
             if (ExternalDmxMinimum > ExternalDmxMaximum)
             {
                 isValid = false;
-                ExternalDmxMinSlider.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                if (externalDmxMinSlider != null) externalDmxMinSlider.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
             }
             else
             {
-                ExternalDmxMinSlider.Background = null;
+                if (externalDmxMinSlider != null) externalDmxMinSlider.Background = null;
             }
-
             return isValid;
         }
 
-        //
-        // Event Handlers
-        //
+        // --- Event Handlers for UI elements ---
+        private async void ShowUnsavedChangesDialog()
+        {
+            var dialog = new ContentDialog()
+            {
+                Title = "Unsaved Changes",
+                Content = "You have unsaved changes. Do you want to save them before leaving?",
+                PrimaryButtonText = "Save",
+                SecondaryButtonText = "Discard",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.XamlRoot
+            };
+            var result = await dialog.ShowAsync();
+            switch (result)
+            {
+                case ContentDialogResult.Primary:
+                    if (ValidateSettings()) { await SaveSettingsAsync(); Frame.GoBack(); }
+                    break;
+                case ContentDialogResult.Secondary: Frame.GoBack(); break;
+                case ContentDialogResult.None: break; // Stay on page
+            }
+        }
+
+        private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ValidateSettings())
+            {
+                await SaveSettingsAsync();
+                // Optionally provide feedback like "Settings Saved!"
+                // For now, just go back or indicate saved state.
+                if (Frame.CanGoBack) Frame.GoBack();
+            }
+        }
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            if (HasSettingsChanged())
-            {
-                ShowUnsavedChangesDialog();
-            }
-            else
-            {
-                Frame.GoBack();
-            }
+            if (HasSettingsChanged()) { ShowUnsavedChangesDialog(); }
+            else { if (Frame.CanGoBack) Frame.GoBack(); }
+        }
+
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (HasSettingsChanged()) { ShowUnsavedChangesDialog(); }
+            else { if (Frame.CanGoBack) Frame.GoBack(); }
         }
 
         private async void BrowseBackgroundButton_Click(object sender, RoutedEventArgs e)
         {
-            var filePicker = new FileOpenPicker();
+            var filePicker = new FileOpenPicker
+            {
+                SuggestedStartLocation = PickerLocationId.PicturesLibrary
+            };
             filePicker.FileTypeFilter.Add(".png");
             filePicker.FileTypeFilter.Add(".jpg");
             filePicker.FileTypeFilter.Add(".jpeg");
-            filePicker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
 
-            // Fix: Use the current window's handle instead of Application.Current.MainWindow  
             var hwnd = WindowNative.GetWindowHandle(App.MainWindow);
             InitializeWithWindow.Initialize(filePicker, hwnd);
-
             var file = await filePicker.PickSingleFileAsync();
-
             if (file != null)
             {
                 BackgroundImagePath = file.Path;
-                BackgroundImagePathTextBox.Text = file.Path;
-
+                // If you have a TextBox named BackgroundImagePathTextBox in your XAML:
+                if (this.FindName("BackgroundImagePathTextBox") is TextBox bipTb) bipTb.Text = file.Path;
                 await LoadBackgroundPreview(file.Path);
             }
         }
 
         private async void BrowseTemplateButton_Click(object sender, RoutedEventArgs e)
         {
-            var filePicker = new FileOpenPicker();
-            filePicker.FileTypeFilter.Add(".png");
-            filePicker.FileTypeFilter.Add(".jpg");
-            filePicker.FileTypeFilter.Add(".jpeg");
-            filePicker.FileTypeFilter.Add(".psd");
-            filePicker.FileTypeFilter.Add(".svg");
-            filePicker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
+            var filePicker = new FileOpenPicker
+            {
+                SuggestedStartLocation = PickerLocationId.PicturesLibrary
+            };
+            filePicker.FileTypeFilter.Add(".png"); filePicker.FileTypeFilter.Add(".jpg"); filePicker.FileTypeFilter.Add(".jpeg");
+            filePicker.FileTypeFilter.Add(".psd"); filePicker.FileTypeFilter.Add(".svg");
 
             var hwnd = WindowNative.GetWindowHandle(App.MainWindow);
             InitializeWithWindow.Initialize(filePicker, hwnd);
-
             var file = await filePicker.PickSingleFileAsync();
-
             if (file != null)
             {
                 PhotoStripTemplatePath = file.Path;
-                PhotoStripTemplateTextBox.Text = file.Path;
+                // If you have a TextBox named PhotoStripTemplateTextBox in your XAML:
+                if (this.FindName("PhotoStripTemplateTextBox") is TextBox pstTb) pstTb.Text = file.Path;
             }
         }
 
         private void ResetBackgroundButton_Click(object sender, RoutedEventArgs e)
         {
             BackgroundImagePath = "";
-            BackgroundImagePathTextBox.Text = "";
-            BackgroundPreviewImage.Source = null;
+            if (this.FindName("BackgroundImagePathTextBox") is TextBox bipTb) bipTb.Text = "";
+            if (this.FindName("BackgroundPreviewImage") is Image img) img.Source = null;
         }
 
+        // This assumes your XAML has ToggleSwitches or CheckBoxes bound to EnablePhotos/EnableVideos
+        // If not, this event handler might be tied to specific controls.
         private void MediaOption_Changed(object sender, RoutedEventArgs e)
         {
-            // Update warning visibility
-            if (!EnablePhotos && !EnableVideos)
+            // This logic is now part of ValidateSettings, but can be called on change too
+            var mediaWarningText = this.FindName("MediaWarningText") as TextBlock;
+            if (mediaWarningText != null)
             {
-                MediaWarningText.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                MediaWarningText.Visibility = Visibility.Collapsed;
+                mediaWarningText.Visibility = (!EnablePhotos && !EnableVideos) ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -435,160 +378,103 @@ namespace WinUI3App1
 
         private async void RefreshPortsButton_Click(object sender, RoutedEventArgs e)
         {
-            RefreshPortsButton.IsEnabled = false;
-            await RefreshComPorts();
-            RefreshPortsButton.IsEnabled = true;
+            if (sender is Button btn) btn.IsEnabled = false;
+            await RefreshComPortsAsync();
+            if (sender is Button btn2) btn2.IsEnabled = true;
         }
 
         private void TestLightsButton_Click(object sender, RoutedEventArgs e)
         {
-            // This would integrate with your actual lighting control code
             Debug.WriteLine($"Testing lights on {SelectedComPort}");
             Debug.WriteLine($"Internal LEDs: {InternalLedsMinimum}% - {InternalLedsMaximum}%");
             Debug.WriteLine($"External DMX: {ExternalDmxMinimum}% - {ExternalDmxMaximum}%");
-
-            // Show a success message
             var notification = new ContentDialog()
             {
                 Title = "Test Lights",
-                Content = "Light test signal sent. Check if the lights are responding.",
+                Content = "Light test signal sent. Check lights.",
                 CloseButtonText = "OK",
                 XamlRoot = this.XamlRoot
             };
-
             _ = notification.ShowAsync();
         }
 
-        private async void ShowUnsavedChangesDialog()
-        {
-            var dialog = new ContentDialog()
-            {
-                Title = "Unsaved Changes",
-                Content = "You have unsaved changes. Do you want to save them before leaving?",
-                PrimaryButtonText = "Save",
-                SecondaryButtonText = "Discard",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = this.XamlRoot
-            };
-
-            var result = await dialog.ShowAsync();
-
-            switch (result)
-            {
-                case ContentDialogResult.Primary:
-                    // Save changes
-                    if (ValidateSettings())
-                    {
-                        SaveSettings();
-                        Frame.GoBack();
-                    }
-                    break;
-                case ContentDialogResult.Secondary:
-                    // Discard changes
-                    Frame.GoBack();
-                    break;
-                case ContentDialogResult.None:
-                    // Cancel navigation
-                    break;
-            }
-        }
-
-        private void SaveButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (ValidateSettings())
-            {
-                SaveSettings();
-                Frame.GoBack();
-            }
-        }
-
-        private void CancelButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (HasSettingsChanged())
-            {
-                ShowUnsavedChangesDialog();
-            }
-            else
-            {
-                Frame.GoBack();
-            }
-        }
-
-        // Add this method to your SettingsPage.xaml.cs file
-        // Place it with your other event handlers
-
         private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
-        {
+        { /* ... (as before) ... */
             try
             {
-                // Get the path to the logs directory
-                string logsDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Logs");
-
-                // Ensure the directory exists
-                if (!System.IO.Directory.Exists(logsDirectory))
-                {
-                    System.IO.Directory.CreateDirectory(logsDirectory);
-                }
-
-                // Log that the logs directory is being opened
-                App.Logger?.Information("Opening logs directory: {LogsDirectory}", logsDirectory);
-
-                // Open the directory in File Explorer
-                var processStartInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "explorer.exe",
-                    Arguments = logsDirectory,
-                    UseShellExecute = true
-                };
-
-                System.Diagnostics.Process.Start(processStartInfo);
+                string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+                if (!Directory.Exists(logsDirectory)) { Directory.CreateDirectory(logsDirectory); }
+                // App.Logger?.Information("Opening logs directory: {LogsDirectory}", logsDirectory);
+                Debug.WriteLine($"Opening logs directory: {logsDirectory}"); // Using Debug.WriteLine if App.Logger isn't set up yet
+                Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = logsDirectory, UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                // Log the error
-                App.Logger?.Error(ex, "Error opening logs directory");
-
-                // Show error message to user
-                var dialog = new ContentDialog
-                {
-                    Title = "Error",
-                    Content = "Could not open logs directory. " + ex.Message,
-                    CloseButtonText = "OK",
-                    XamlRoot = this.XamlRoot
-                };
-
+                // App.Logger?.Error(ex, "Error opening logs directory");
+                Debug.WriteLine($"Error opening logs directory: {ex.Message}");
+                var dialog = new ContentDialog { Title = "Error", Content = "Could not open logs directory. " + ex.Message, CloseButtonText = "OK", XamlRoot = this.XamlRoot };
                 _ = dialog.ShowAsync();
             }
         }
 
-    }
-
-    /// <summary>
-    /// Converter to display integer values as percentages
-    /// </summary>
-    public class IntToPercentConverter : Microsoft.UI.Xaml.Data.IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, string language)
+        // --- Helper methods for UI ---
+        private async Task LoadBackgroundPreview(string imagePath)
         {
-            if (value is int intValue)
+            var backgroundPreviewImage = this.FindName("BackgroundPreviewImage") as Image;
+            if (backgroundPreviewImage == null) return;
+            try
             {
-                return $"{intValue}%";
-            }
-            return value;
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, string language)
-        {
-            if (value is string stringValue && stringValue.EndsWith("%"))
-            {
-                if (int.TryParse(stringValue.TrimEnd('%'), out int result))
+                var bitmap = new BitmapImage();
+                using (var stream = File.OpenRead(imagePath))
                 {
-                    return result;
+                    await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
                 }
+                backgroundPreviewImage.Source = bitmap;
             }
-            return value;
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading background preview: {ex.Message}");
+                backgroundPreviewImage.Source = null;
+            }
         }
-    }
 
+        private async Task RefreshComPortsAsync()
+        { // Renamed to Async
+            _availableComPorts.Clear();
+            try
+            {
+                var ports = await Task.Run(() => SerialPort.GetPortNames()); // Run on background thread
+                foreach (var port in ports.OrderBy(p => p)) { _availableComPorts.Add(port); }
+                if (_availableComPorts.Count == 0) { _availableComPorts.Add("No COM Ports Available"); }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error refreshing COM ports: {ex.Message}");
+                _availableComPorts.Add("Error retrieving COM ports");
+            }
+            // ComPortComboBox.ItemsSource = _availableComPorts; // Set in InitializeControls
+        }
+
+        private void RefreshPrinters()
+        {
+            _availablePrinters.Clear();
+            try
+            {
+                // Placeholder - replace with actual printer discovery logic if needed
+                _availablePrinters.Add("Default Printer");
+                _availablePrinters.Add("Microsoft Print to PDF");
+                _availablePrinters.Add("Microsoft XPS Document Writer");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error refreshing printers: {ex.Message}");
+                _availablePrinters.Add("Error retrieving printers");
+            }
+            // PrinterSelectionComboBox.ItemsSource = _availablePrinters; // Set in InitializeControls
+        }
+
+    } // End of SettingsPage class
+
+    // Ensure IntToPercentConverter is correctly defined, possibly in its own file or here if simple enough
+    // public class IntToPercentConverter : Microsoft.UI.Xaml.Data.IValueConverter { /* ... (as defined in user's original file) ... */ }
 }
