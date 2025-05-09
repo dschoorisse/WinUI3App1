@@ -22,7 +22,7 @@ namespace WinUI3App
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>();
         private const string PLACEHOLDER_IMAGE_PATH = "ms-appx:///Assets/placeholder.jpg";
-        private const string SMILEY_REPLACEMENT = "😊";
+        private const string SMILEY_REPLACEMENT = "📷";
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
         private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
         private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
