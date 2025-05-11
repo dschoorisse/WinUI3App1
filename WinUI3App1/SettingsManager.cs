@@ -37,6 +37,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
             {
                 if (File.Exists(FilePath))
                 {
+                    
                     string json = await File.ReadAllTextAsync(FilePath);
                     if (!string.IsNullOrWhiteSpace(json))
                     {

@@ -76,13 +76,13 @@
                 <Button x:Name="RetakeButton" Click="RetakeButton_Click" Width="140" Height="160" Background="White" Foreground="Black" CornerRadius="16">
                     <StackPanel>
                         <FontIcon Glyph="&#xE925;" FontSize="72" HorizontalAlignment="Center"/>
-                        <TextBlock Text="Retake" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
+                        <TextBlock x:Name="RetakeButtonLabel" Text="Retake" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button x:Name="AcceptButton" Click="AcceptButton_Click" Width="240" Height="160" Background="White" Foreground="Black" CornerRadius="16">
                     <StackPanel>
                         <FontIcon Glyph="&#xE73E;" FontSize="72" HorizontalAlignment="Center"/>
-                        <TextBlock Text="OK" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
+                        <TextBlock x:Name="AcceptButtonLabel" Text="OK" FontSize="24" FontWeight="SemiBold" Margin="0,2,0,0" TextAlignment="Center"/>
                     </StackPanel>
                 </Button>
             </StackPanel>

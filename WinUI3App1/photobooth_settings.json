@@ -25,5 +25,18 @@
   "EnableRemoteAdminViaMqtt": false,
   "AdminUsernames": [
     "admin"
-  ]
+  ],
+  "UiMainPageTitleText": "Welkom!", 
+  "UiMainPageSubtitleText": "Touch a button below to begin your awesome photo experience!", 
+  "UiMainPagePhotoButtonText": "Start Photo Session", 
+  "UiMainPageVideoButtonText": "Create Video Clip", 
+  "UiInstructionTextFormat": "Er worden zometeen {0} foto's gemaakt, ben je klaar?",
+  "UiCountdown3": "3",
+  "UiCountdown2": "2",
+  "UiCountdown1": "1",
+  "UiCountdownSmile": "📸",
+  "UiSavingMessage": "Opslaan...",
+  "UiDoneMessage": "Klaar!",
+  "UiButtonAcceptText": "OK",
+  "UiButtonRetakeText": "Opnieuw"
 }

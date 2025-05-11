@@ -31,12 +31,14 @@
                 Canvas.ZIndex="1">
 
       <TextBlock Text="Welcome!"
+                 x:Name="TitleTextBlock" 
                  FontSize="60"
                  FontWeight="Bold"
                  Foreground="White"
                  TextAlignment="Center"/>
 
       <TextBlock Text="Capture your perfect moment"
+                 x:Name="SubtitleTextBlock"
                  FontSize="32"
                  Foreground="White"
                  TextAlignment="Center"
@@ -69,6 +71,7 @@
                       FontSize="72"
                       HorizontalAlignment="Center"/>
             <TextBlock Text="Take Photos"
+                       x:Name="TakePhotoButtonLabel"
                        FontSize="24"
                        FontWeight="SemiBold"
                        Margin="0,16,0,0"
@@ -89,6 +92,7 @@
                       FontSize="72"
                       HorizontalAlignment="Center"/>
             <TextBlock Text="Record Video"
+                       x:Name="RecordVideoButtonLabel"
                        FontSize="24"
                        FontWeight="SemiBold"
                        Margin="0,16,0,0"

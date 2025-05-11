@@ -61,10 +61,11 @@ namespace WinUI3App
             this.Focus(FocusState.Programmatic);
         }
 
-        // Add this to your OnNavigatedTo method
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+
+            LoadDynamicUITexts();
 
             // Load the background image
             await LoadBackgroundFromSettings();
@@ -84,6 +85,7 @@ namespace WinUI3App
 
         private async void Frame_Navigated(object sender, NavigationEventArgs e)
         {
+
             // If we're returning to this page from the settings page
             if (e.SourcePageType == this.GetType())
             {
@@ -92,6 +94,54 @@ namespace WinUI3App
 
                 // Reload the background image in case it changed
                 await LoadBackgroundFromSettings();
+
+            }
+        }
+
+        private void LoadDynamicUITexts()
+        {
+            if (App.CurrentSettings == null)
+            {
+                App.Logger?.Warning("MainPage: App.CurrentSettings is null in LoadDynamicUITexts. UI texts will use XAML defaults or hardcoded fallbacks.");
+                // Apply hardcoded fallbacks if TextBlocks might be empty and settings aren't loaded
+                if (this.FindName("TitleTextBlock") is TextBlock titleDef) titleDef.Text = "Welcome!";
+                if (this.FindName("SubtitleTextBlock") is TextBlock subtitleDef) subtitleDef.Text = "Capture your perfect moment.";
+                if (this.FindName("TakePhotoButtonLabel") is TextBlock photoDef) photoDef.Text = "Take Photo";
+                if (this.FindName("RecordVideoButtonLabel") is TextBlock videoDef) videoDef.Text = "Record Video";
+                return;
+            }
+
+            App.Logger?.Information("MainPage: Loading dynamic UI texts from settings.");
+
+            // Load Title Text (assuming TextBlock x:Name="TitleTextBlock" in your XAML)
+            if (this.FindName("TitleTextBlock") is TextBlock titleTextBlock)
+            {
+                titleTextBlock.Text = App.CurrentSettings.UiMainPageTitleText ?? "Welcome!"; // Fallback
+            }
+
+            // Load Subtitle Text (assuming TextBlock x:Name="SubtitleTextBlock" in your XAML)
+            if (this.FindName("SubtitleTextBlock") is TextBlock subtitleTextBlock)
+            {
+                subtitleTextBlock.Text = App.CurrentSettings.UiMainPageSubtitleText ?? "Capture your perfect moment."; // Fallback
+            }
+
+            // Load Button Texts (as implemented in the previous step)
+            if (this.FindName("TakePhotoButtonLabel") is TextBlock photoButtonLabel)
+            {
+                photoButtonLabel.Text = App.CurrentSettings.UiMainPagePhotoButtonText ?? "Take Photo";
+            }
+            else if (this.FindName("TakePhotoButton") is Button photoButton && photoButton.Content is string)
+            {
+                photoButton.Content = App.CurrentSettings.UiMainPagePhotoButtonText ?? "Take Photo";
+            }
+
+            if (this.FindName("RecordVideoButtonLabel") is TextBlock videoButtonLabel)
+            {
+                videoButtonLabel.Text = App.CurrentSettings.UiMainPageVideoButtonText ?? "Record Video";
+            }
+            else if (this.FindName("RecordVideoButton") is Button videoButton && videoButton.Content is string)
+            {
+                videoButton.Content = App.CurrentSettings.UiMainPageVideoButtonText ?? "Record Video";
             }
         }
 

@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage;
+using WinUI3App1;
 
 namespace WinUI3App
 {
@@ -22,7 +23,6 @@ namespace WinUI3App
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>();
         private const string PLACEHOLDER_IMAGE_PATH = "ms-appx:///Assets/placeholder.jpg";
-        private const string SMILEY_REPLACEMENT = "📸";
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
         private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
         private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
@@ -36,12 +36,42 @@ namespace WinUI3App
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
             await LoadPageBackgroundAsync();
+            LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
             ResetProcedure();
             await StartPhotoProcedure();
         }
+        // New method to load configurable texts
+        private void LoadConfigurableTexts()
+        {
+            if (App.CurrentSettings == null)
+            {
+                App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null in LoadConfigurableTexts. UI texts might use fallbacks.");
+                // Set hardcoded fallbacks directly if settings aren't loaded, though this path should ideally not be hit often
+                // if App.OnLaunched correctly populates App.CurrentSettings.
+                InstructionText.Text = string.Format("We are going to take {0} pictures, get ready!", TOTAL_PHOTOS_TO_TAKE); // Fallback
+                if (this.FindName("AcceptButtonLabel") is TextBlock acceptLabel) acceptLabel.Text = "OK"; // Fallback
+                if (this.FindName("RetakeButtonLabel") is TextBlock retakeLabel) retakeLabel.Text = "Retake"; // Fallback
+                return;
+            }
+
+            // For InstructionText - set in ShowInstructions directly using settings
+            // For Countdown steps - set in DoCountdown directly using settings
+            // For Saving/Done messages - set in AcceptButton_Click directly using settings
+
+            // Set button texts (assuming TextBlocks have x:Name="AcceptButtonLabel" and x:Name="RetakeButtonLabel")
+            if (this.FindName("AcceptButtonLabel") is TextBlock accLabel)
+            {
+                accLabel.Text = App.CurrentSettings.UiButtonAcceptText ?? "OK";
+            }
+            if (this.FindName("RetakeButtonLabel") is TextBlock retLabel)
+            {
+                retLabel.Text = App.CurrentSettings.UiButtonRetakeText ?? "Retake";
+            }
+        }
+
 
         private async Task LoadPageBackgroundAsync()
-        { /* ... (no change) ... */
+        { 
             try
             {
                 var localSettings = ApplicationData.Current.LocalSettings;
@@ -114,20 +144,15 @@ namespace WinUI3App
         private async Task ShowInstructions()
         {
             _currentState = PhotoBoothState.ShowingInstructions;
-            InstructionText.Text = $"We are going to take {TOTAL_PHOTOS_TO_TAKE} pictures, get ready!";
+
+            string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
+            InstructionText.Text = string.Format(instructionFormat, TOTAL_PHOTOS_TO_TAKE);
+
+            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Keep dots visible as per last request
+            UpdateProgressIndicator(0, false); // Show 3 pending dots
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
             PhotoGallery.Visibility = Visibility.Collapsed;
-            // ProgressIndicatorPanel.Visibility = Visibility.Collapsed; // <<-- REMOVE OR COMMENT OUT THIS LINE
-
-            // Ensure it's visible if ResetProcedure logic was different,
-            // or rely on ResetProcedure having already made it visible.
-            // For clarity with the new request, let's ensure it's visible if it's supposed to show with instructions.
-            // Since ResetProcedure makes it visible, removing the collapsed line is sufficient.
-            // If you want to be absolutely sure:
-            // UpdateProgressIndicator(0, false); // Show 3 pending dots
-            // ProgressIndicatorPanel.Visibility = Visibility.Visible;
-
 
             var fadeInAnimation = new DoubleAnimation
             { To = 1.0, Duration = TimeSpan.FromSeconds(1), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
@@ -144,10 +169,40 @@ namespace WinUI3App
             sb = new Storyboard(); sb.Children.Add(fadeOutAnimation); sb.Begin();
 
             await Task.Delay(1000);
-
-            // After instructions fade out, the dots will then update to "active" for the first photo
-            // in StartNextPhotoCapture.
             await StartNextPhotoCapture();
+        }
+
+        private async Task DoCountdown()
+        {
+            if (_photosTaken == 0) { CameraPlaceholderImage.Visibility = Visibility.Visible; }
+            else { CameraPlaceholderImage.Visibility = Visibility.Collapsed; }
+            TakenPhotoImage.Opacity = 0;
+
+            // Use texts from settings, with fallbacks
+            string step3Text = App.CurrentSettings?.UiCountdown3 ?? "3";
+            string step2Text = App.CurrentSettings?.UiCountdown2 ?? "2";
+            string step1Text = App.CurrentSettings?.UiCountdown1 ?? "1";
+            string smileText = App.CurrentSettings?.UiCountdownSmile ?? "📸";
+
+            string[] countdownSteps = { step3Text, step2Text, step1Text, smileText };
+
+            foreach (var step in countdownSteps)
+            {
+                CountdownText.Text = step;
+                CountdownTextBackground.Opacity = 0;
+
+                var daUkf = new DoubleAnimationUsingKeyFrames();
+                Storyboard.SetTarget(daUkf, CountdownTextBackground); Storyboard.SetTargetProperty(daUkf, "Opacity");
+                var kfFadeInStart = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0)), Value = 0 };
+                var kfFadeInEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(250)), Value = 1, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut } };
+                var kfHold = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(750)), Value = 1 };
+                var kfFadeOutEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1000)), Value = 0, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn } };
+                daUkf.KeyFrames.Add(kfFadeInStart); daUkf.KeyFrames.Add(kfFadeInEnd); daUkf.KeyFrames.Add(kfHold); daUkf.KeyFrames.Add(kfFadeOutEnd);
+                var sb = new Storyboard(); sb.Children.Add(daUkf); sb.Begin();
+                await Task.Delay(1000);
+            }
+            CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
+            await TakePhotoSimulation();
         }
 
         private async Task StartNextPhotoCapture()
@@ -167,32 +222,6 @@ namespace WinUI3App
                 // All photos taken, proceed to review
                 await ShowAllPhotosForReview();
             }
-        }
-
-        private async Task DoCountdown()
-        { /* ... (no change from previous correct version) ... */
-            if (_photosTaken == 0) { CameraPlaceholderImage.Visibility = Visibility.Visible; }
-            else { CameraPlaceholderImage.Visibility = Visibility.Collapsed; }
-            TakenPhotoImage.Opacity = 0;
-
-            string[] countdownSteps = { "3", "2", "1", SMILEY_REPLACEMENT };
-            foreach (var step in countdownSteps)
-            {
-                CountdownText.Text = step;
-                CountdownTextBackground.Opacity = 0;
-
-                var daUkf = new DoubleAnimationUsingKeyFrames();
-                Storyboard.SetTarget(daUkf, CountdownTextBackground); Storyboard.SetTargetProperty(daUkf, "Opacity");
-                var kfFadeInStart = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0)), Value = 0 };
-                var kfFadeInEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(250)), Value = 1, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut } };
-                var kfHold = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(750)), Value = 1 };
-                var kfFadeOutEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1000)), Value = 0, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn } };
-                daUkf.KeyFrames.Add(kfFadeInStart); daUkf.KeyFrames.Add(kfFadeInEnd); daUkf.KeyFrames.Add(kfHold); daUkf.KeyFrames.Add(kfFadeOutEnd);
-                var sb = new Storyboard(); sb.Children.Add(daUkf); sb.Begin();
-                await Task.Delay(1000);
-            }
-            CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
-            await TakePhotoSimulation();
         }
 
         private async Task TakePhotoSimulation()
@@ -271,21 +300,27 @@ namespace WinUI3App
         }
 
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
-        { /* ... (no change) ... */
+        {
             if (_currentState != PhotoBoothState.ReviewingPhotos) return;
             _currentState = PhotoBoothState.Saving;
-            ProgressIndicatorPanel.Visibility = Visibility.Collapsed; // Hide dots when saving
+            ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
             PhotoGallery.Visibility = Visibility.Collapsed; ActionButtonsPanel.Visibility = Visibility.Collapsed;
-            OverlayGrid.Visibility = Visibility.Visible; OverlayText.Text = "Saving...";
+
+            OverlayGrid.Visibility = Visibility.Visible;
+            OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving..."; // Use from settings
+
             await Task.Delay(2000);
-            OverlayText.Text = "Done!"; await Task.Delay(1500);
+
+            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!"; // Use from settings
+            await Task.Delay(1500);
+
             OverlayGrid.Visibility = Visibility.Collapsed;
             _currentState = PhotoBoothState.Finished;
             if (this.Frame != null && this.Frame.CanGoBack) { this.Frame.GoBack(); }
         }
 
         private async void RetakeButton_Click(object sender, RoutedEventArgs e)
-        { /* ... (no change) ... */
+        {
             if (_currentState != PhotoBoothState.ReviewingPhotos && _currentState != PhotoBoothState.Finished) return;
             await StartPhotoProcedure();
         }
