@@ -461,6 +461,7 @@ namespace WinUI3App1
                 // Now we might have updated it further (e.g., BackgroundImagePath, LastSuccessfullyDownloaded info).
                 if (backgroundChanged) // Or any other property modified here after loading from remote
                 {
+                    App.Logger?.Information("App: Settings changed after remote update. Saving updated settings.");
                     await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // 'true' as this is part of remote update flow, preserve LastModifiedUtc from MQTT push
                 }
 
@@ -469,13 +470,51 @@ namespace WinUI3App1
                 {
                     MainWindow.DispatcherQueue.TryEnqueue(async () =>
                     {
-                        // ... (Refresh MainPage/PhotoBoothPage UI as before) ...
-                        // The LoadBackgroundFromSettings on MainPage/PhotoBoothPage will now use the updated CurrentSettings.BackgroundImagePath
-                        if (MainWindow.Content is Microsoft.UI.Xaml.Controls.Frame rootFrame) { /* ... refresh page ... */ }
+                        App.Logger?.Information("App: Now on UI thread. Attempting to refresh active page UI.");
+                        try
+                        {
+                            if (MainWindow.Content is Frame rootFrame) // Ensure 'Frame' is Microsoft.UI.Xaml.Controls.Frame
+                            {
+                                if (rootFrame.Content is MainPage mainPageInstance)
+                                {
+                                    App.Logger?.Information("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
+                                    // These methods in MainPage.xaml.cs must be public
+                                    mainPageInstance.LoadDynamicUITexts();
+                                    await mainPageInstance.LoadBackgroundFromSettings();
+                                    App.Logger?.Information("App: MainPage UI refresh calls completed.");
+                                }
+                                else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                                {
+                                    App.Logger?.Information("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
+                                    // PhotoBoothPage loads its texts/settings in its Page_Loaded or StartPhotoProcedure.
+                                    // If it needs to react to live changes while already active (e.g., for button texts if review screen is shown),
+                                    // it would need a public method like RefreshConfigurableTexts().
+                                    // photoBoothPageInstance.RefreshConfigurableTexts(); // Example call
+                                    // Its background is also loaded on Page_Loaded. A live background change would need similar handling.
+                                    // await photoBoothPageInstance.LoadPageBackgroundAsync(); // If such a public method exists
+                                }
+                                // Add 'else if' for other pages if they need live UI updates from settings
+                            }
+                            else
+                            {
+                                App.Logger?.Warning("App: MainWindow.Content is not a Frame on UI thread. Cannot determine active page to refresh.");
+                            }
+                        }
+                        catch (Exception uiEx)
+                        {
+                            App.Logger?.Error(uiEx, "App: Exception occurred during UI refresh on UI thread from OnRemoteSettingsUpdated.");
+                        }
                     });
                 }
+                else
+                {
+                    App.Logger?.Error("App: MainWindow or its DispatcherQueue is null. Cannot dispatch UI updates for remote settings.");
+                }
             }
-            // ... (else for newSettings is null) ...
+            else
+            {
+                App.Logger?.Error("App: Reloaded settings (newSettings) are null after remote update notification. No changes applied to App.CurrentSettings.");
+            }
         }
         private static async Task<string> DownloadAndSaveImageAsync(string imageUrl, string expectedHash, string localFileNameSeed)
         {
