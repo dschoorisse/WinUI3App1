@@ -40,7 +40,7 @@ namespace WinUI3App1
             if (string.IsNullOrWhiteSpace(_photoboothId)) { /*...*/ }
 
             // Create settings topic to monitor
-            _remoteSettingsSetTopic = $"photobooth/admin/{_photoboothId}/settings/set";
+            _remoteSettingsSetTopic = $"photobooth/{_photoboothId}/settings/set";
 
             // --- Definieer LWT Eigenschappen ---
             string lastWillTopic = $"photobooth/{_photoboothId}/status";
