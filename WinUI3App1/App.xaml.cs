@@ -11,6 +11,10 @@ using Serilog.Events;
 using WinUI3App;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using MQTTnet;
+using Serilog.Formatting.Compact;
+using MQTTnet.Extensions.ManagedClient;
+using Serilog.Sinks.Mqtt;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -301,68 +305,7 @@ namespace WinUI3App1
                     retainedFileCountLimit: 7, // Example: Keep 7 days of logs
                                                // Using a more detailed output template for file logs
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] ({SourceContext}) ID:{PhotoboothID} {Message:lj}{NewLine}{Exception}")
-                .WriteTo.Debug(); // Standard debug output
-
-            // ---- Add MQTT Sink Configuration ----
-            if (CurrentSettings != null &&
-                !string.IsNullOrEmpty(CurrentSettings.MqttBrokerAddress) &&
-                CurrentSettings.MqttBrokerPort > 0 &&
-                !string.IsNullOrEmpty(PhotoboothIdentifier))
-            {
-                LogEventLevel mqttMinLevel = LogEventLevel.Information; // Default minimum level to send to MQTT
-                if (Enum.TryParse<LogEventLevel>(CurrentSettings.LogLevel, true, out var configuredLevel))
-                {
-                    mqttMinLevel = configuredLevel; // Use LogLevel from settings.json for this sink
-                }
-
-                string mqttLogTopic = $"photobooth/{PhotoboothIdentifier}/logs"; // Single topic per device
-
-                //
-                // ** IMPORTANT: Placeholder for your chosen Serilog MQTT Sink Configuration **
-                // You MUST replace the commented-out section below with the actual configuration
-                // code for the Serilog MQTT sink NuGet package you have installed.
-                // Refer to that package's documentation for the correct syntax.
-                //
-                // The example below is purely conceptual.
-                //
-                /*
-                try
-                {
-                    // --- EXAMPLE: Configuring a hypothetical MQTT sink ---
-                    // This assumes the sink package provides a .MQTT() extension method
-                    // and handles its own MQTT client creation based on options.
-
-                    // var mqttClientOptionsForLogging = new MqttClientOptionsBuilder()
-                    //    .WithTcpServer(CurrentSettings.MqttBrokerAddress, CurrentSettings.MqttBrokerPort)
-                    //    .WithClientId($"photobooth_{PhotoboothIdentifier}_logSink_{Guid.NewGuid().ToString("N").Substring(0,8)}") // Ensure unique client ID
-                    //    // Add .WithCredentials(CurrentSettings.MqttUsername, CurrentSettings.MqttPassword) if your sink needs explicit client options with auth
-                    //    .Build();
-                    
-                    // loggerConfiguration.WriteTo.SomeSpecificMqttSink( // Replace .SomeSpecificMqttSink with the actual method
-                    //    clientOptions: mqttClientOptionsForLogging, // Or individual parameters like host, port, etc.
-                    //    topic: mqttLogTopic,
-                    //    formatter: new RenderedCompactJsonFormatter(), // For JSON structured logs
-                    //    restrictedToMinimumLevel: mqttMinLevel,
-                    //    retained: false, // Log messages should not be retained
-                    //    qualityOfServiceLevel: MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce // Or AtLeastOnce
-                    // );
-                    // --- End of Example ---
-
-                    // If the Logger is already created at this point, use it. Otherwise, this log line might be too early.
-                    // System.Diagnostics.Debug.WriteLine($"INFO: MQTT Logging Sink configured (conceptually). Topic: {mqttLogTopic}, MinLevel: {mqttMinLevel}");
-                }
-                catch (Exception ex)
-                {
-                    // System.Diagnostics.Debug.WriteLine($"ERROR: Failed to configure MQTT Logging Sink: {ex.Message}");
-                }
-                */
-                System.Diagnostics.Debug.WriteLine($"INFO: MQTT Logging Sink is a PLACEHOLDER. Topic: {mqttLogTopic}, MinLevel: {mqttMinLevel}. You need to install and configure a real Serilog MQTT sink.");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("WARN: MQTT Broker details, PhotoboothIdentifier, or CurrentSettings not available. MQTT logging sink will NOT be enabled.");
-            }
-            // ---- End of MQTT Sink Configuration ----
+                .WriteTo.Debug(); // Standard debug output           
 
             Logger = loggerConfiguration.CreateLogger();
             Log.Logger = Logger; // Assign to Serilog's global static logger for convenience

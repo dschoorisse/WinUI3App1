@@ -40,7 +40,7 @@ namespace WinUI3App1
             if (string.IsNullOrWhiteSpace(_photoboothId)) { /*...*/ }
 
             // Create settings topic to monitor
-            _remoteSettingsSetTopic = $"photobooth/admin/{_photoboothId}/settings/set";
+            _remoteSettingsSetTopic = $"photobooth/{_photoboothId}/settings/set";
 
             // --- Definieer LWT Eigenschappen ---
             string lastWillTopic = $"photobooth/{_photoboothId}/status";
@@ -148,6 +148,8 @@ namespace WinUI3App1
             _logger.Information("MQTT [{PhotoboothId}]: Connected event received.", _photoboothId);
             OnConnectionStatusChanged(true);
 
+            // Subscribe to settings command update
+            _logger.Information($"Subscribing to {_remoteSettingsSetTopic}");
             await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_remoteSettingsSetTopic).Build());
 
             // Example: Subscribe to a topic specific to this booth
@@ -296,6 +298,8 @@ namespace WinUI3App1
 
         public async Task SubscribeToTopicAsync(string topic, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtMostOnce)
         {
+            _logger.Information($"Subscribing to topic {topic}");
+
             if (_mqttClient == null || !_mqttClient.IsConnected || _isDisposed)
             {
                 _logger.Warning("MQTT: Cannot subscribe, client is not connected or disposed.");
