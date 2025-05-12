@@ -255,46 +255,105 @@ namespace WinUI3App
             }
         }
 
+        // In PhotoBoothPage.xaml.cs
+
         private async Task TakePhotoSimulation()
         {
-            // Simulate taking a photo (replace with actual camera capture logic)
-            App.Logger.Debug("Simulating photo capture...");
+            // Log the start of this photo simulation step, indicating which photo number this is (1-based)
+            App.Logger.Information("TakePhotoSimulation: Starting simulation for photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
+            // Set the application's current state to indicate a photo is being "taken"
             _currentState = PhotoBoothState.TakingPhoto;
-            await Task.Delay(100);
+            App.Logger.Debug("TakePhotoSimulation: State set to TakingPhoto.");
 
+            // Simulate a short delay for actual camera capture time
+            App.Logger.Debug("TakePhotoSimulation: Simulating camera capture delay (100ms).");
+            await Task.Delay(100); // In a real app, this would be your camera SDK's capture call.
+            App.Logger.Debug("TakePhotoSimulation: Capture delay complete.");
+
+            // Add the path of the "taken" photo (currently a placeholder) to our list
             _photoPaths.Add(PLACEHOLDER_IMAGE_PATH);
+            // Increment the counter for photos taken
             _photosTaken++;
-            UpdateProgressIndicator(_photosTaken, false);
-            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Ensure dots remain visible
+            App.Logger.Information("TakePhotoSimulation: Placeholder photo recorded. Total photos taken: {PhotosTakenCount}.", _photosTaken);
 
-            CameraPlaceholderImage.Visibility = Visibility.Collapsed; // This is inside CaptureElementsViewbox
-            TakenPhotoImage.Source = new BitmapImage(new Uri(PLACEHOLDER_IMAGE_PATH));
-            // ... (rest of TakenPhotoImage setup and animation)
-            if (TakenPhotoImage.RenderTransform is not ScaleTransform) { TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 }; TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5); }
-            ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleX = 0.5; ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleY = 0.5;
-            TakenPhotoImage.Opacity = 0;
+            // Update the progress indicator dots to reflect the photo just taken as completed.
+            // The 'false' for isCapturingNext indicates we are done with this capture, not starting the next countdown yet.
+            UpdateProgressIndicator(_photosTaken, false);
+            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Ensure the dots panel remains visible
+            App.Logger.Debug("TakePhotoSimulation: Progress indicator updated.");
+
+            // Prepare the UI for showing the taken photo preview
+            CameraPlaceholderImage.Visibility = Visibility.Collapsed; // Hide the live feed/placeholder
+            App.Logger.Debug("TakePhotoSimulation: CameraPlaceholderImage hidden.");
+
+            TakenPhotoImage.Source = new BitmapImage(new Uri(PLACEHOLDER_IMAGE_PATH)); // Set the image source for the preview
+            App.Logger.Debug("TakePhotoSimulation: TakenPhotoImage source set to placeholder.");
+
+            // Ensure the RenderTransform is set up correctly for animations and reset its initial state (scaled down, transparent)
+            if (TakenPhotoImage.RenderTransform is not ScaleTransform)
+            {
+                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+                App.Logger.Debug("TakePhotoSimulation: ScaleTransform for TakenPhotoImage initialized.");
+            }
+            // Explicitly set initial scale for the "zoom in" effect
+            ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleX = 0.5;
+            ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleY = 0.5;
+            TakenPhotoImage.Opacity = 0; // Start transparent for fade-in effect
+            App.Logger.Debug("TakePhotoSimulation: TakenPhotoImage initial transform and opacity reset for animation.");
+
+            // --- Animation to show the taken photo (Zoom in and Fade in) ---
+            App.Logger.Debug("TakePhotoSimulation: Starting 'show photo' animation for TakenPhotoImage.");
             var scaleXAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
             var scaleYAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
             var fadeInAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(400) };
+
             Storyboard showPhotoSb = new Storyboard();
             Storyboard.SetTarget(scaleXAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXAnim, "ScaleX");
             Storyboard.SetTarget(scaleYAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYAnim, "ScaleY");
             Storyboard.SetTarget(fadeInAnim, TakenPhotoImage); Storyboard.SetTargetProperty(fadeInAnim, "Opacity");
-            showPhotoSb.Children.Add(scaleXAnim); showPhotoSb.Children.Add(scaleYAnim); showPhotoSb.Children.Add(fadeInAnim);
+
+            showPhotoSb.Children.Add(scaleXAnim);
+            showPhotoSb.Children.Add(scaleYAnim);
+            showPhotoSb.Children.Add(fadeInAnim);
             showPhotoSb.Begin();
+
+            // Wait for the photo to be displayed on screen for a set duration
+            App.Logger.Debug("TakePhotoSimulation: Photo preview animation started. Waiting for display duration (2500ms).");
             await Task.Delay(2500);
+            App.Logger.Debug("TakePhotoSimulation: Photo display duration complete.");
+
+            // --- Animation to hide the taken photo (Fade out and optionally Zoom out) ---
+            App.Logger.Debug("TakePhotoSimulation: Starting 'hide photo' animation for TakenPhotoImage.");
             var scaleXResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
             var scaleYResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
             var fadeOutAnimPhoto = new DoubleAnimation { To = 0.0, Duration = TimeSpan.FromMilliseconds(300) };
+
             Storyboard hidePhotoSb = new Storyboard();
             Storyboard.SetTarget(fadeOutAnimPhoto, TakenPhotoImage); Storyboard.SetTargetProperty(fadeOutAnimPhoto, "Opacity");
             hidePhotoSb.Children.Add(fadeOutAnimPhoto);
-            if (_photosTaken < TOTAL_PHOTOS_TO_TAKE) { Storyboard.SetTarget(scaleXResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXResetAnim, "ScaleX"); Storyboard.SetTarget(scaleYResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYResetAnim, "ScaleY"); hidePhotoSb.Children.Add(scaleXResetAnim); hidePhotoSb.Children.Add(scaleYResetAnim); }
-            hidePhotoSb.Begin();
-            await Task.Delay(300);
 
+            // Only apply the zoom-out part of the hide animation if there are more photos to take.
+            // This prepares the ScaleTransform for the next photo's "zoom-in" or resets it if going to gallery.
+            if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
+            {
+                App.Logger.Debug("TakePhotoSimulation: More photos to take, adding scale reset to hide animation.");
+                Storyboard.SetTarget(scaleXResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXResetAnim, "ScaleX");
+                Storyboard.SetTarget(scaleYResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYResetAnim, "ScaleY");
+                hidePhotoSb.Children.Add(scaleXResetAnim);
+                hidePhotoSb.Children.Add(scaleYResetAnim);
+            }
+            hidePhotoSb.Begin();
+
+            // Wait for the hide animation to complete
+            await Task.Delay(300);
+            App.Logger.Debug("TakePhotoSimulation: 'Hide photo' animation complete.");
+
+            // Proceed to the next step in the photo capture sequence (either another countdown or the review screen)
+            App.Logger.Information("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
             await StartNextPhotoCapture();
+            App.Logger.Debug("TakePhotoSimulation: Method finished.");
         }
 
         private async Task ShowAllPhotosForReview()
@@ -335,6 +394,9 @@ namespace WinUI3App
 
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
         {
+            // Handle the accept button click event
+            App.Logger.Information("Accept button clicked. Current state: {_currentState}");
+
             if (_currentState != PhotoBoothState.ReviewingPhotos) return;
             _currentState = PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
@@ -343,7 +405,8 @@ namespace WinUI3App
             OverlayGrid.Visibility = Visibility.Visible;
             OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving..."; // Use from settings
 
-            await Task.Delay(2000);
+            // Simulate saving process 
+            await Task.Delay(1000);
 
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!"; // Use from settings
             await Task.Delay(1500);
