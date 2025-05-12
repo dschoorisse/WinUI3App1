@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Shapes;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -72,13 +73,17 @@ namespace WinUI3App
 
         private async Task LoadPageBackgroundAsync()
         { 
+            App.Logger.Debug("Loading page background image from settings...");
             try
             {
                 var localSettings = ApplicationData.Current.LocalSettings;
                 string backgroundImagePath = localSettings.Values["BackgroundImagePath"] as string ?? "";
 
+                // Check if the path is valid and the file exists
                 if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
                 {
+                    // Load the image from the specified path
+                    App.Logger.Debug($"Loading background image from path: {backgroundImagePath}");
                     BitmapImage bitmap = new BitmapImage();
                     using (FileStream stream = File.OpenRead(backgroundImagePath))
                     {
@@ -89,6 +94,8 @@ namespace WinUI3App
                 }
                 else
                 {
+                    // If the path is empty or the file doesn't exist, set a default image or hide the overlay
+                    App.Logger.Debug("Background image path is empty or file does not exist. Hiding overlay.");
                     PageBackgroundImage.Source = null;
                     PageBackgroundOverlay.Visibility = Visibility.Collapsed;
                 }
@@ -97,14 +104,21 @@ namespace WinUI3App
             {
                 PageBackgroundImage.Source = null;
                 PageBackgroundOverlay.Visibility = Visibility.Collapsed;
+                // Log
+                App.Logger?.Error($"Error loading background image: {ex.Message}");
             }
         }
 
         private void UpdateProgressIndicator(int photosSuccessfullyCompleted, bool isCapturingNext)
         {
+            // Update the progress dots based on the number of photos taken
+            // and whether we are capturing the next photo
+            // Set the colors of the dots based on the current state
+            App.Logger.Debug($"Updating progress indicator: {photosSuccessfullyCompleted} photos taken, capturing next: {isCapturingNext}");
             Ellipse[] dots = { ProgressDot1, ProgressDot2, ProgressDot3 };
             for (int i = 0; i < dots.Length; i++)
             {
+                App.Logger.Debug($"Dot {i + 1} state: {(i < photosSuccessfullyCompleted ? "Completed" : (i == photosSuccessfullyCompleted && isCapturingNext ? "Active" : "Pending"))}");
                 if (i < photosSuccessfullyCompleted) { dots[i].Fill = _dotCompletedBrush; }
                 else if (i == photosSuccessfullyCompleted && isCapturingNext && photosSuccessfullyCompleted < TOTAL_PHOTOS_TO_TAKE) { dots[i].Fill = _dotActiveBrush; }
                 else { dots[i].Fill = _dotPendingBrush; }
@@ -114,6 +128,9 @@ namespace WinUI3App
 
         private void ResetProcedure()
         {
+            App.Logger.Debug("Resetting photo booth procedure...");
+
+            // Reset the state and UI elements
             _photosTaken = 0;
             _photoPaths.Clear();
             _currentState = PhotoBoothState.Idle;
@@ -136,6 +153,7 @@ namespace WinUI3App
 
         private async Task StartPhotoProcedure()
         {
+            App.Logger.Information("Starting photo procedure...");
             ResetProcedure(); // This makes ProgressIndicatorPanel visible with pending dots
             _currentState = PhotoBoothState.ShowingInstructions;
             await ShowInstructions();
@@ -143,6 +161,9 @@ namespace WinUI3App
 
         private async Task ShowInstructions()
         {
+            App.Logger.Debug("Showing instructions...");
+
+            // Show instructions to the user
             _currentState = PhotoBoothState.ShowingInstructions;
 
             string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
@@ -174,6 +195,9 @@ namespace WinUI3App
 
         private async Task DoCountdown()
         {
+            // This method handles the countdown before taking a photo
+            App.Logger.Debug("Starting countdown...");
+
             if (_photosTaken == 0) { CameraPlaceholderImage.Visibility = Visibility.Visible; }
             else { CameraPlaceholderImage.Visibility = Visibility.Collapsed; }
             TakenPhotoImage.Opacity = 0;
@@ -188,6 +212,7 @@ namespace WinUI3App
 
             foreach (var step in countdownSteps)
             {
+                App.Logger.Debug($"Countdown step: {step} of {countdownSteps}");
                 CountdownText.Text = step;
                 CountdownTextBackground.Opacity = 0;
 
@@ -207,8 +232,12 @@ namespace WinUI3App
 
         private async Task StartNextPhotoCapture()
         {
+            App.Logger.Debug($"Starting next photo capture, current state: {_currentState}");
+
             if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
             {
+                // Proceed to take the next photo
+                App.Logger.Debug($"Taking photo {_photosTaken + 1} of {TOTAL_PHOTOS_TO_TAKE}");
                 _currentState = PhotoBoothState.Countdown;
                 CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
                 PhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
@@ -219,13 +248,18 @@ namespace WinUI3App
             }
             else
             {
+                App.Logger.Information("All photos taken, proceeding to review...");
+
                 // All photos taken, proceed to review
                 await ShowAllPhotosForReview();
             }
         }
 
         private async Task TakePhotoSimulation()
-        { /* ... (no change from previous correct version for dot color logic) ... */
+        {
+            // Simulate taking a photo (replace with actual camera capture logic)
+            App.Logger.Debug("Simulating photo capture...");
+
             _currentState = PhotoBoothState.TakingPhoto;
             await Task.Delay(100);
 
