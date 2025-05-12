@@ -5,14 +5,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Windowing; // Required for AppWindow and AppWindowPresenterKind
 using WinRT.Interop;          // Required for WindowNative and Win32Interop
 using Serilog;
-// Removed: using Windows.ApplicationModel; // No longer explicitly needed here
-// Removed: using Windows.ApplicationModel.Activation; // Covered by LaunchActivatedEventArgs argument type
-// Using System.Text.Json implicitly via SettingsManager if needed, but not directly here.
 using MQTTnet.Protocol;
 using Microsoft.UI;
 using Serilog.Events;
 using WinUI3App;
-using Microsoft.UI.Xaml.Controls; // Already present
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -21,6 +19,8 @@ namespace WinUI3App1
     {
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
+
+        public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
 
         // These will be populated from PhotoBoothSettings loaded via SettingsManager
         public static string PhotoboothIdentifier { get; private set; }
@@ -95,13 +95,33 @@ namespace WinUI3App1
             }
             catch (Exception ex) { Logger.Error(ex, "Failed to initialize MQTT Service."); }
 
-            // --- MainWindow Creation and Fullscreen Logic ---
+            // 5. Main window creation and Fullscreen Logic ---
             MainWindow = new MainWindow();
             Logger.Information("Main window created");
 
             const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name
             string currentComputerName = Environment.MachineName;
             Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
+
+            // 6. Setup Navigation Tracking and Initial Page State for MQTT
+            if (App.MainWindow is MainWindow mwInstance && mwInstance.AppFrame != null)
+            {
+                // Get initial page name after MainWindow constructor has navigated
+                if (mwInstance.AppFrame.Content is Page initialPage)
+                {
+                    CurrentPageName = initialPage.GetType().Name;
+                }
+                else // Fallback if Content is not yet a Page (less likely here)
+                {
+                    CurrentPageName = mwInstance.AppFrame.SourcePageType?.Name ?? "MainPage";
+                }
+                Logger.Information("App: Initial page detected: {CurrentPageName}", CurrentPageName);
+
+                // Subscribe for subsequent navigations
+                mwInstance.AppFrame.Navigated += RootFrame_Navigated;
+            }
+            else { Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events."); }
+
 
             #region fullscreen or windowed
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
@@ -133,20 +153,66 @@ namespace WinUI3App1
             MainWindow.Activate();
             Logger.Information("Main window activated");
 
-            // 6. Start MQTT Service Connection
+            // 7. Start MQTT Service Connection
             if (MqttServiceInstance != null)
             {
                 try { await MqttServiceInstance.StartAsync(); }
                 catch (Exception ex) { Logger.Error(ex, "MQTT Service failed to start connection on launch for {PhotoboothId}.", PhotoboothIdentifier); }
             }
 
-            // 7. Setup other app-level handlers
+            // 8. Setup other app-level handlers
             MainWindow.Closed += OnMainWindowClosed;
             this.UnhandledException += App_UnhandledException;
             Logger.Information("Application initialization complete.");
 
             this.UnhandledException += App_UnhandledException;
             Logger.Information("Application initialized and launched.");
+
+            // Send status over MQTT
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+            {
+                await TriggerStatusUpdate(appState: "Launched");
+            }
+            else
+            {
+                Logger.Warning("MQTT Service not connected. Status update not sent.");
+            }
+        }
+
+        private static async void RootFrame_Navigated(object sender, NavigationEventArgs e)
+        {
+            string newPageName = "Unknown";
+            if (e.Content is Page page) // Get name from the actual Page instance
+            {
+                newPageName = page.GetType().Name;
+            }
+            else if (e.SourcePageType != null) // Fallback to the type used for navigation
+            {
+                newPageName = e.SourcePageType.Name;
+            }
+
+            if (CurrentPageName != newPageName)
+            {
+                string previousPageName = CurrentPageName;
+                CurrentPageName = newPageName;
+                Logger?.Information("App: Navigated from {PreviousPageName} to {CurrentPageName}", previousPageName, CurrentPageName);
+
+                // Trigger an MQTT status update to reflect the new page
+                // Using a generic "active" state; specific page actions might set more detailed states.
+                if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+                {
+                    await TriggerStatusUpdate(appState: "PageChanged");
+                }
+            }
+        }
+
+        // Centralized method to publish the full JSON status
+        public static async Task TriggerStatusUpdate(string appState = "active", bool? cameraConnectedStatus = null, bool retain = true)
+        {
+            // cameraConnectedStatus could be fetched from a global state or service if available,
+            // otherwise it's passed in or defaults to null.
+            // For now, we don't have a global camera status readily available here.
+            await PublishStatusJsonAsync(appState, cameraConnectedStatus, retain);
         }
 
         private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
@@ -193,6 +259,7 @@ namespace WinUI3App1
                     {
                         photoboothId = PhotoboothIdentifier,
                         state,
+                        currentPage = CurrentPageName, // Include current page name
                         timestamp = DateTime.UtcNow.ToString("o"),
                         cameraConnected
                     };

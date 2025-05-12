@@ -1,5 +1,5 @@
 ﻿{
-  "BackgroundImagePath": "C:\\Users\\NLDAVAN3\\OneDrive - ABB\\Pictures\\background.jpg",
+  "BackgroundImagePath": "C:\\Users\\NLDAVAN3\\OneDrive - ABB\\Pictures\\background_empty.jpg",
   "PhotoStripLayoutIndex": 0,
   "PhotoStripTemplatePath": "",
   "TimeoutSeconds": 60,
@@ -13,7 +13,7 @@
   "ExternalDmxMinimum": 10,
   "ExternalDmxMaximum": 80,
   "SelectedComPort": "",
-  "MqttBrokerAddress": "192.168.1.3",
+  "MqttBrokerAddress": "localhost",
   "MqttBrokerPort": 1883,
   "MqttUsername": "videopaal",
   "MqttPassword": "d8232msn2987sd",

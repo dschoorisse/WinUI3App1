@@ -45,7 +45,7 @@
                  Margin="0,0,0,24"/>
 
         <Image x:Name="cameraPreview"  
-              Source="Assets/placeholder.jpg"  
+              Source="Assets/placeholder_leeg.jpg"  
               Width="800"  
               Height="600"  
               HorizontalAlignment="Center"  
