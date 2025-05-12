@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic; // Added for MqttUserProperty if needed later
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MQTTnet;
@@ -21,7 +22,12 @@ namespace WinUI3App1
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private readonly string _photoboothId; // Store the ID
 
+        // Remote settings updates
+        public event EventHandler SettingsUpdatedRemotely;
+        private string _remoteSettingsSetTopic = ""; // Will be initialized with PhotoboothIdentifier
+
         public event EventHandler<bool>? ConnectionStatusChanged;
+
         public bool IsConnected => _mqttClient?.IsConnected ?? false;
 
         public MqttService(ILogger logger, string photoboothId, string brokerAddress, int port, string? username, string? password)
@@ -32,6 +38,9 @@ namespace WinUI3App1
 
             if (string.IsNullOrWhiteSpace(brokerAddress)) { /*...*/ }
             if (string.IsNullOrWhiteSpace(_photoboothId)) { /*...*/ }
+
+            // Create settings topic to monitor
+            _remoteSettingsSetTopic = $"photobooth/admin/{_photoboothId}/settings/set";
 
             // --- Definieer LWT Eigenschappen ---
             string lastWillTopic = $"photobooth/{_photoboothId}/status";
@@ -134,13 +143,15 @@ namespace WinUI3App1
             }
         }
 
-        private Task HandleConnectedAsync(MqttClientConnectedEventArgs e)
+        private async Task HandleConnectedAsync(MqttClientConnectedEventArgs e)
         {
             _logger.Information("MQTT [{PhotoboothId}]: Connected event received.", _photoboothId);
             OnConnectionStatusChanged(true);
+
+            await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_remoteSettingsSetTopic).Build());
+
             // Example: Subscribe to a topic specific to this booth
             // _ = SubscribeToTopicAsync($"photobooth/{_photoboothId}/commands");
-            return Task.CompletedTask;
         }
 
         private async Task HandleDisconnectedAsync(MqttClientDisconnectedEventArgs e)
@@ -177,16 +188,69 @@ namespace WinUI3App1
             }
         }
 
-        private Task HandleApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
+        private async Task HandleApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
         {
             // Log met ID
-            _logger.Information("MQTT [{PhotoboothId}]: Received on topic '{Topic}'. Payload: {Payload}",
-                 _photoboothId,
-                e.ApplicationMessage.Topic,
-                Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
+            _logger.Information("MQTT [{PhotoboothId}]: Received on topic '{Topic}'. Payload: {Payload}", _photoboothId, e.ApplicationMessage.Topic, Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
+                        string topic = e.ApplicationMessage.Topic;
+            string payload = System.Text.Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+
+            if (topic == _remoteSettingsSetTopic)
+            {
+                _logger.Information("MQTT [{PhotoboothId}]: Received settings update on topic '{Topic}'.", _photoboothId, topic);
+                await ProcessRemoteSettingsUpdateAsync(payload);
+            }
 
             // Process message here
-            return Task.CompletedTask;
+        }
+
+        private async Task ProcessRemoteSettingsUpdateAsync(string jsonPayload)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var remoteSettings = JsonSerializer.Deserialize<PhotoBoothSettings>(jsonPayload, options);
+
+                if (remoteSettings == null)
+                {
+                    _logger.Error("MQTT [{PhotoboothId}]: Failed to deserialize remote settings payload.", _photoboothId);
+                    return;
+                }
+                // Ensure remoteSettings has a valid timestamp; if not, could ignore or assign DateTime.MinValue
+                // but our model constructor should give it one if the JSON field was missing.
+
+                _logger.Information("MQTT [{PhotoboothId}]: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
+
+                PhotoBoothSettings localSettings = await SettingsManager.LoadSettingsAsync();
+                if (localSettings == null)
+                {
+                    _logger.Error("MQTT [{PhotoboothId}]: Critical - Failed to load local settings for comparison.", _photoboothId);
+                    return; // Or handle more gracefully
+                }
+                _logger.Information("MQTT [{PhotoboothId}]: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
+
+
+                if (remoteSettings.LastModifiedUtc > localSettings.LastModifiedUtc)
+                {
+                    _logger.Information("MQTT [{PhotoboothId}]: Remote settings are newer. Applying and saving.", _photoboothId);
+                    await SettingsManager.SaveSettingsAsync(remoteSettings, true); // true to preserve remote timestamp
+
+                    SettingsUpdatedRemotely?.Invoke(this, EventArgs.Empty); // Notify app
+                }
+                else
+                {
+                    _logger.Information("MQTT [{PhotoboothId}]: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
+                        _photoboothId, remoteSettings.LastModifiedUtc, localSettings.LastModifiedUtc);
+                }
+            }
+            catch (JsonException jsonEx)
+            {
+                _logger.Error(jsonEx, "MQTT [{PhotoboothId}]: JSON Deserialization error for remote settings.", _photoboothId);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "MQTT [{PhotoboothId}]: Error processing remote settings update.", _photoboothId);
+            }
         }
 
         public async Task PublishAsync(string topic, string payload, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtMostOnce, bool retain = false)

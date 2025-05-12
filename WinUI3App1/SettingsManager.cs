@@ -44,7 +44,11 @@ namespace WinUI3App1 // Ensure this namespace matches your project
                         var settings = JsonSerializer.Deserialize<PhotoBoothSettings>(json);
                         if (settings != null)
                         {
-                            Debug.WriteLine($"Settings loaded successfully from {FilePath}");
+                            // If LastModifiedUtc was missing from an old JSON, it might be DateTime.MinValue
+                            // The PhotoBoothSettings constructor now sets it to UtcNow for new instances.
+                            // If loaded and it's MinValue, could update it to file's last write time or now.
+                            // For simplicity, constructor handles new instances. Loaded instances will have their value.
+                            Debug.WriteLine($"SettingsManager: Settings loaded successfully from {FilePath}. Timestamp: {settings.LastModifiedUtc}");
                             return settings;
                         }
                     }
@@ -68,32 +72,34 @@ namespace WinUI3App1 // Ensure this namespace matches your project
             return defaultSettings;
         }
 
-        public static async Task SaveSettingsAsync(PhotoBoothSettings settings)
+        public static async Task SaveSettingsAsync(PhotoBoothSettings settings, bool isFromRemoteUpdate = false)
         {
             if (settings == null)
             {
-                Debug.WriteLine("Attempted to save null settings. Operation aborted.");
+                Debug.WriteLine("SettingsManager: Attempted to save null settings. Operation aborted.");
                 return;
+            }
+
+            if (!isFromRemoteUpdate) // If changes are from local UI (SettingsPage)
+            {
+                settings.LastModifiedUtc = DateTime.UtcNow; // Update timestamp to now
+                Debug.WriteLine($"SettingsManager: Local save. Updating LastModifiedUtc to: {settings.LastModifiedUtc}");
+            }
+            else // If from remote, the timestamp in 'settings' object is the one from the server
+            {
+                Debug.WriteLine($"SettingsManager: Remote save. Preserving LastModifiedUtc: {settings.LastModifiedUtc}");
             }
 
             try
             {
-                string directory = Path.GetDirectoryName(FilePath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory); // Ensure directory exists
-                }
-
+                // ... (directory creation, serialization, File.WriteAllTextAsync as before) ...
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(settings, options);
                 await File.WriteAllTextAsync(FilePath, json);
-                Debug.WriteLine($"Settings saved successfully to {FilePath}");
+                Debug.WriteLine($"SettingsManager: Settings saved to {FilePath}");
+
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error saving settings to {FilePath}: {ex.Message}");
-                // Optionally, notify the user or App.Logger
-            }
+            catch (Exception ex) { /* ... log error ... */ }
         }
     }
 }

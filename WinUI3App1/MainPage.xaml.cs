@@ -98,7 +98,7 @@ namespace WinUI3App
             }
         }
 
-        private void LoadDynamicUITexts()
+        public void LoadDynamicUITexts()
         {
             if (App.CurrentSettings == null)
             {
@@ -146,7 +146,7 @@ namespace WinUI3App
         }
 
         // Updated background loading method with additional fixes
-        private async Task LoadBackgroundFromSettings()
+        public async Task LoadBackgroundFromSettings()
         {
             try
             {

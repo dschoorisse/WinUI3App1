@@ -7,6 +7,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
     public class PhotoBoothSettings
     {
         // General
+        public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow; // Last modified date
         public string PhotoboothId { get; set; } = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}"; // Ensure safe ID
 
         // Guest-Facing UI Texts for Main Page

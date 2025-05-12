@@ -9,7 +9,10 @@ using Serilog;
 // Removed: using Windows.ApplicationModel.Activation; // Covered by LaunchActivatedEventArgs argument type
 // Using System.Text.Json implicitly via SettingsManager if needed, but not directly here.
 using MQTTnet.Protocol;
-using Microsoft.UI; // Already present
+using Microsoft.UI;
+using Serilog.Events;
+using WinUI3App;
+using Microsoft.UI.Xaml.Controls; // Already present
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -36,66 +39,61 @@ namespace WinUI3App1
 
         protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            Logger.Information("Application launching...");
-
-            // Load settings first
+            // 1. Load settings FIRST - these are needed for logger and other initializations
             try
             {
                 CurrentSettings = await SettingsManager.LoadSettingsAsync();
                 if (CurrentSettings == null)
                 {
-                    Logger.Error("Failed to load settings, CurrentSettings is null. Using emergency defaults.");
-                    CurrentSettings = new PhotoBoothSettings(); // Fallback to code defaults
-                    // Optionally, try to save these emergency defaults if SettingsManager didn't
-                    await SettingsManager.SaveSettingsAsync(CurrentSettings);
+                    // This case should ideally be handled by SettingsManager returning defaults
+                    CurrentSettings = new PhotoBoothSettings(); // Emergency fallback
+                    // Log this critical failure if possible with a pre-logger or Debug.WriteLine
+                    System.Diagnostics.Debug.WriteLine("CRITICAL: Failed to load settings, CurrentSettings was null even after LoadSettingsAsync. Using emergency defaults.");
+                    await SettingsManager.SaveSettingsAsync(CurrentSettings); // Attempt to save defaults
                 }
-                Logger.Information("Settings loaded/initialized.");
             }
             catch (Exception ex)
             {
-                Logger.Fatal(ex, "CRITICAL: Failed to load settings during OnLaunched. Application might not function correctly.");
-                // Handle critical failure: show error, use hardcoded emergency defaults, or exit.
-                CurrentSettings = new PhotoBoothSettings(); // Use code defaults as a last resort
+                System.Diagnostics.Debug.WriteLine($"CRITICAL: Exception loading settings: {ex.Message}. Using emergency defaults.");
+                CurrentSettings = new PhotoBoothSettings(); // Emergency fallback
             }
 
-            // --- Initialize PhotoboothIdentifier from loaded settings ---
+            // 2. Initialize PhotoboothIdentifier from loaded settings (needed for log topic)
             PhotoboothIdentifier = CurrentSettings.PhotoboothId;
             if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) ||
-                PhotoboothIdentifier.Contains("/") ||
-                PhotoboothIdentifier.Contains("+") ||
-                PhotoboothIdentifier.Contains("#"))
+                PhotoboothIdentifier.Contains("/") || PhotoboothIdentifier.Contains("+") || PhotoboothIdentifier.Contains("#"))
             {
                 string oldId = PhotoboothIdentifier;
                 PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
-                Logger.Warning("Invalid PhotoboothId ('{OldId}') found in settings, using default: {DefaultId}", oldId, PhotoboothIdentifier);
-                CurrentSettings.PhotoboothId = PhotoboothIdentifier; // Update the model
-                await SettingsManager.SaveSettingsAsync(CurrentSettings); // Save the corrected ID back to JSON
+                // Cannot use App.Logger here yet as it's not initialized. Use Debug.WriteLine or queue log.
+                System.Diagnostics.Debug.WriteLine($"WARN: Invalid PhotoboothId ('{oldId}') in settings, using default: {PhotoboothIdentifier}");
+                CurrentSettings.PhotoboothId = PhotoboothIdentifier;
+                await SettingsManager.SaveSettingsAsync(CurrentSettings); // Save corrected ID
             }
-            Logger.Information("Using Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
 
-            // --- Initialize MQTT Service with loaded settings ---
+            // 3. Now configure logging (Logger will be assigned here)
+            ConfigureLogging(); // This will now have access to CurrentSettings and PhotoboothIdentifier
+
+            Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+
+            // 4. Initialize MQTT Service (for commands, status, etc.)
+            // ... (Your existing MQTT Service initialization logic using CurrentSettings for broker, port, user, pass) ...
             string mqttBroker = CurrentSettings.MqttBrokerAddress;
             int mqttPort = CurrentSettings.MqttBrokerPort;
             string mqttUser = CurrentSettings.MqttUsername;
             string mqttPassword = CurrentSettings.MqttPassword;
-
             try
             {
                 if (!string.IsNullOrEmpty(mqttBroker) && mqttPort > 0)
                 {
                     MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
                     MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
-                    Logger.Information("MQTT Service created for ID {PhotoboothId}.", PhotoboothIdentifier);
+                    MqttServiceInstance.SettingsUpdatedRemotely += OnRemoteSettingsUpdated;
+                    Logger.Information("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
                 }
-                else
-                {
-                    Logger.Error("MQTT configuration missing in settings (Broker Address or Port). MQTT Service not started.");
-                }
+                else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
             }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to initialize MQTT Service using settings from JSON.");
-            }
+            catch (Exception ex) { Logger.Error(ex, "Failed to initialize MQTT Service."); }
 
             // --- MainWindow Creation and Fullscreen Logic ---
             MainWindow = new MainWindow();
@@ -105,6 +103,7 @@ namespace WinUI3App1
             string currentComputerName = Environment.MachineName;
             Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
 
+            #region fullscreen or windowed
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
             {
                 Logger.Information("Computer name matches. Attempting to set window to fullscreen.");
@@ -129,35 +128,22 @@ namespace WinUI3App1
                 catch (Exception ex) { Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); }
             }
             else Logger.Information("Computer name does not match. Application will start in default windowed mode.");
+            #endregion
 
             MainWindow.Activate();
             Logger.Information("Main window activated");
 
-            // ---- Start MQTT Service (actual connection attempt) ----
+            // 6. Start MQTT Service Connection
             if (MqttServiceInstance != null)
             {
-                try
-                {
-                    await MqttServiceInstance.StartAsync();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error(ex, "MQTT [{PhotoboothId}] Failed to start MQTT Service connection on launch.", PhotoboothIdentifier);
-                }
+                try { await MqttServiceInstance.StartAsync(); }
+                catch (Exception ex) { Logger.Error(ex, "MQTT Service failed to start connection on launch for {PhotoboothId}.", PhotoboothIdentifier); }
             }
 
-            // --- MainWindow Closed Event Handler ---
-            MainWindow.Closed += async (sender, e) =>
-            {
-                Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
-                if (MqttServiceInstance != null)
-                {
-                    MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
-                    await MqttServiceInstance.DisposeAsync();
-                    Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
-                }
-                Log.CloseAndFlush(); // Ensure Serilog flushes on exit
-            };
+            // 7. Setup other app-level handlers
+            MainWindow.Closed += OnMainWindowClosed;
+            this.UnhandledException += App_UnhandledException;
+            Logger.Information("Application initialization complete.");
 
             this.UnhandledException += App_UnhandledException;
             Logger.Information("Application initialized and launched.");
@@ -235,22 +221,160 @@ namespace WinUI3App1
         private void ConfigureLogging()
         {
             string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
-            if (!Directory.Exists(logsDirectory))
-            {
-                Directory.CreateDirectory(logsDirectory);
-            }
-            Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
+            if (!Directory.Exists(logsDirectory)) Directory.CreateDirectory(logsDirectory);
+
+            var loggerConfiguration = new LoggerConfiguration()
+                .MinimumLevel.Debug() // Overall minimum level for logs processed by Serilog
+                .Enrich.FromLogContext() // Allows adding contextual information to logs
+                .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier) // Add PhotoboothID to all log events
+                .Enrich.WithProperty("Application", "PhotoBoothApp") // Example static enrichment
                 .WriteTo.File(
                     path: Path.Combine(logsDirectory, "photobooth-log-.txt"),
                     rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 7, // Keep logs for 7 days
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] ({SourceContext}) {Message:lj}{NewLine}{Exception}")
-                .WriteTo.Debug()
-                .Enrich.FromLogContext() // Enables SourceContext for MqttService logging
-                .CreateLogger();
-            Log.Logger = Logger; // Assign to Serilog's global logger if MqttService uses Log.ForContext
-            Logger.Information("Logging initialized");
+                    retainedFileCountLimit: 7, // Example: Keep 7 days of logs
+                                               // Using a more detailed output template for file logs
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] ({SourceContext}) ID:{PhotoboothID} {Message:lj}{NewLine}{Exception}")
+                .WriteTo.Debug(); // Standard debug output
+
+            // ---- Add MQTT Sink Configuration ----
+            if (CurrentSettings != null &&
+                !string.IsNullOrEmpty(CurrentSettings.MqttBrokerAddress) &&
+                CurrentSettings.MqttBrokerPort > 0 &&
+                !string.IsNullOrEmpty(PhotoboothIdentifier))
+            {
+                LogEventLevel mqttMinLevel = LogEventLevel.Information; // Default minimum level to send to MQTT
+                if (Enum.TryParse<LogEventLevel>(CurrentSettings.LogLevel, true, out var configuredLevel))
+                {
+                    mqttMinLevel = configuredLevel; // Use LogLevel from settings.json for this sink
+                }
+
+                string mqttLogTopic = $"photobooth/{PhotoboothIdentifier}/logs"; // Single topic per device
+
+                //
+                // ** IMPORTANT: Placeholder for your chosen Serilog MQTT Sink Configuration **
+                // You MUST replace the commented-out section below with the actual configuration
+                // code for the Serilog MQTT sink NuGet package you have installed.
+                // Refer to that package's documentation for the correct syntax.
+                //
+                // The example below is purely conceptual.
+                //
+                /*
+                try
+                {
+                    // --- EXAMPLE: Configuring a hypothetical MQTT sink ---
+                    // This assumes the sink package provides a .MQTT() extension method
+                    // and handles its own MQTT client creation based on options.
+
+                    // var mqttClientOptionsForLogging = new MqttClientOptionsBuilder()
+                    //    .WithTcpServer(CurrentSettings.MqttBrokerAddress, CurrentSettings.MqttBrokerPort)
+                    //    .WithClientId($"photobooth_{PhotoboothIdentifier}_logSink_{Guid.NewGuid().ToString("N").Substring(0,8)}") // Ensure unique client ID
+                    //    // Add .WithCredentials(CurrentSettings.MqttUsername, CurrentSettings.MqttPassword) if your sink needs explicit client options with auth
+                    //    .Build();
+                    
+                    // loggerConfiguration.WriteTo.SomeSpecificMqttSink( // Replace .SomeSpecificMqttSink with the actual method
+                    //    clientOptions: mqttClientOptionsForLogging, // Or individual parameters like host, port, etc.
+                    //    topic: mqttLogTopic,
+                    //    formatter: new RenderedCompactJsonFormatter(), // For JSON structured logs
+                    //    restrictedToMinimumLevel: mqttMinLevel,
+                    //    retained: false, // Log messages should not be retained
+                    //    qualityOfServiceLevel: MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce // Or AtLeastOnce
+                    // );
+                    // --- End of Example ---
+
+                    // If the Logger is already created at this point, use it. Otherwise, this log line might be too early.
+                    // System.Diagnostics.Debug.WriteLine($"INFO: MQTT Logging Sink configured (conceptually). Topic: {mqttLogTopic}, MinLevel: {mqttMinLevel}");
+                }
+                catch (Exception ex)
+                {
+                    // System.Diagnostics.Debug.WriteLine($"ERROR: Failed to configure MQTT Logging Sink: {ex.Message}");
+                }
+                */
+                System.Diagnostics.Debug.WriteLine($"INFO: MQTT Logging Sink is a PLACEHOLDER. Topic: {mqttLogTopic}, MinLevel: {mqttMinLevel}. You need to install and configure a real Serilog MQTT sink.");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("WARN: MQTT Broker details, PhotoboothIdentifier, or CurrentSettings not available. MQTT logging sink will NOT be enabled.");
+            }
+            // ---- End of MQTT Sink Configuration ----
+
+            Logger = loggerConfiguration.CreateLogger();
+            Log.Logger = Logger; // Assign to Serilog's global static logger for convenience
+                                 // (some libraries or parts of your code might use Log.Information directly)
+        }
+
+        private async void OnMainWindowClosed(object sender, WindowEventArgs args)
+        {
+            Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
+            if (MqttServiceInstance != null)
+            {
+                MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
+                MqttServiceInstance.SettingsUpdatedRemotely -= OnRemoteSettingsUpdated;
+                await MqttServiceInstance.DisposeAsync();
+                Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
+            }
+            Logger.Information("Flushing logs and closing application.");
+            await Log.CloseAndFlushAsync(); // Ensure Serilog flushes all sinks
+        }
+
+
+        private async void OnRemoteSettingsUpdated(object sender, EventArgs e)
+        {
+            Logger.Information("App: Event received - Remote settings have been updated. Reloading settings now.");
+
+            // Ensure this runs on the UI thread if it has potential to touch UI or navigate,
+            // though just updating App.CurrentSettings and PhotoboothIdentifier should be safe.
+            // MainWindow.DispatcherQueue?.TryEnqueue(async () => { ... }); might be needed for more complex UI reactions.
+
+            var newSettings = await SettingsManager.LoadSettingsAsync();
+            if (newSettings != null)
+            {
+                CurrentSettings = newSettings; // Update the globally accessible settings object
+
+                // Re-evaluate PhotoboothIdentifier if it could have changed remotely
+                string oldId = PhotoboothIdentifier;
+                PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+                if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) || PhotoboothIdentifier.Contains("/") /*...etc...*/ )
+                {
+                    PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
+                    Logger.Warning("App: Invalid PhotoboothId ('{OldRemoteId}') in remotely updated settings, using default: {DefaultId}", oldId, PhotoboothIdentifier);
+                    CurrentSettings.PhotoboothId = PhotoboothIdentifier;
+                    // Save back the corrected ID if it was bad from remote source (rare, server should send valid ID)
+                    await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // true to keep remote timestamp if possible or handle appropriately
+                }
+                if (oldId != PhotoboothIdentifier)
+                {
+                    Logger.Information("App: PhotoboothIdentifier changed via remote settings from '{OldId}' to '{NewId}'. MQTT service might need re-initialization if critical topics changed.", oldId, PhotoboothIdentifier);
+                    // TODO: Handle MqttService re-initialization if PhotoboothIdentifier affects its core topics/LWT.
+                    // This might involve disposing and newing up MqttServiceInstance.
+                }
+
+                Logger.Information("App: Settings reloaded. Current Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+
+                // TODO: Implement a strategy to notify active pages to refresh their UI.
+                // For example, if MainPage is active, call a public RefreshUI() method on it.
+                if (MainWindow.Content is Frame rootFrame)
+                {
+                    if (rootFrame.Content is MainPage mainPageInstance)
+                    {
+                        Logger.Information("App: Requesting MainPage to refresh its UI from new settings.");
+                        mainPageInstance.LoadDynamicUITexts(); // Re-load texts
+                        _ = mainPageInstance.LoadBackgroundFromSettings(); // Re-load background (make LoadBackground public or call a wrapper)
+                    }
+                    else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                    {
+                        // PhotoBoothPage loads texts in its Loaded event. If it's already loaded,
+                        // it might need an explicit refresh method or re-navigation.
+                        // For now, it will pick up new texts if it's reloaded/re-navigated to.
+                        // Consider adding a RefreshUITexts() method to PhotoBoothPage as well.
+                        Logger.Information("App: PhotoBoothPage is active. It will use new settings on next load or if it has a refresh mechanism.");
+                    }
+                }
+                // A more robust way is an event aggregator or messaging system for cross-page communication.
+            }
+            else
+            {
+                Logger.Error("App: Failed to reload settings after remote update notification.");
+            }
         }
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
