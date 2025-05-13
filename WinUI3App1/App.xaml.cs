@@ -719,6 +719,17 @@ namespace WinUI3App1
             }
         }
 
+        public enum PhotoBoothState
+        {
+            Idle,
+            ShowingInstructions,
+            Countdown,
+            TakingPhoto,
+            ShowingSinglePhoto,
+            ReviewingPhotos,
+            Saving, Finished
+        }
+
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.
         // [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

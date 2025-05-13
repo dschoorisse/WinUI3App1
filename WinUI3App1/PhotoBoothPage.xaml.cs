@@ -17,9 +17,9 @@ namespace WinUI3App
 {
     public sealed partial class PhotoBoothPage : Page
     {
-        private enum PhotoBoothState { /* ... (as defined before) ... */ Idle, ShowingInstructions, Countdown, TakingPhoto, ShowingSinglePhoto, ReviewingPhotos, Saving, Finished }
+        
 
-        private PhotoBoothState _currentState = PhotoBoothState.Idle;
+        private App.PhotoBoothState _currentState = App.PhotoBoothState.Idle;
         private int _photosTaken = 0;
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>();
@@ -128,14 +128,16 @@ namespace WinUI3App
             // Visibility of the panel itself is now controlled by the calling methods
         }
 
-        private void ResetProcedure()
+        private async void ResetProcedure()
         {
             App.Logger.Debug("Resetting photo booth procedure...");
+
+            await App.TriggerStatusUpdate(appState: "Resetting");
 
             // Reset the state and UI elements
             _photosTaken = 0;
             _photoPaths.Clear();
-            _currentState = PhotoBoothState.Idle;
+            _currentState = App.PhotoBoothState.Idle;
 
             InstructionTextBackground.Opacity = 0;
             CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
@@ -156,8 +158,11 @@ namespace WinUI3App
         private async Task StartPhotoProcedure()
         {
             App.Logger.Information("Starting photo procedure...");
-            ResetProcedure(); // This makes ProgressIndicatorPanel visible with pending dots
-            _currentState = PhotoBoothState.ShowingInstructions;
+            
+            // Make ProgressIndicatorPanel visible with pending dots
+            ResetProcedure(); 
+
+            _currentState = App.PhotoBoothState.ShowingInstructions;
             await ShowInstructions();
         }
 
@@ -166,7 +171,7 @@ namespace WinUI3App
             App.Logger.Debug("Showing instructions...");
 
             // Show instructions to the user
-            _currentState = PhotoBoothState.ShowingInstructions;
+            _currentState = App.PhotoBoothState.ShowingInstructions;
 
             string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
             InstructionText.Text = string.Format(instructionFormat, TOTAL_PHOTOS_TO_TAKE);
@@ -240,7 +245,7 @@ namespace WinUI3App
             {
                 // Proceed to take the next photo
                 App.Logger.Debug($"Taking photo {_photosTaken + 1} of {TOTAL_PHOTOS_TO_TAKE}");
-                _currentState = PhotoBoothState.Countdown;
+                _currentState = App.PhotoBoothState.Countdown;
                 CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
                 PhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
 
@@ -261,11 +266,14 @@ namespace WinUI3App
 
         private async Task TakePhotoSimulation()
         {
+            // Send status update over MQTT
+            await App.TriggerStatusUpdate(appState: "PhotoProcedure");
+
             // Log the start of this photo simulation step, indicating which photo number this is (1-based)
             App.Logger.Information("TakePhotoSimulation: Starting simulation for photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
             // Set the application's current state to indicate a photo is being "taken"
-            _currentState = PhotoBoothState.TakingPhoto;
+            _currentState = App.PhotoBoothState.TakingPhoto;
             App.Logger.Debug("TakePhotoSimulation: State set to TakingPhoto.");
 
             // Simulate a short delay for actual camera capture time
@@ -360,7 +368,7 @@ namespace WinUI3App
 
         private async Task ShowAllPhotosForReview()
         {
-            _currentState = PhotoBoothState.ReviewingPhotos;
+            _currentState = App.PhotoBoothState.ReviewingPhotos;
 
             // Hide elements related to individual capture/preview
             CaptureElementsViewbox.Visibility = Visibility.Collapsed;
@@ -399,8 +407,13 @@ namespace WinUI3App
             // Handle the accept button click event
             App.Logger.Information("Accept button clicked. Current state: {_currentState}");
 
-            if (_currentState != PhotoBoothState.ReviewingPhotos) return;
-            _currentState = PhotoBoothState.Saving;
+            if (_currentState != App.PhotoBoothState.ReviewingPhotos)
+            {
+                return;
+            }
+
+            // Proceed to save the photos
+            _currentState = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
             PhotoGallery.Visibility = Visibility.Collapsed; ActionButtonsPanel.Visibility = Visibility.Collapsed;
 
@@ -414,13 +427,16 @@ namespace WinUI3App
             await Task.Delay(1500);
 
             OverlayGrid.Visibility = Visibility.Collapsed;
-            _currentState = PhotoBoothState.Finished;
+            _currentState = App.PhotoBoothState.Finished;
             if (this.Frame != null && this.Frame.CanGoBack) { this.Frame.GoBack(); }
         }
 
         private async void RetakeButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_currentState != PhotoBoothState.ReviewingPhotos && _currentState != PhotoBoothState.Finished) return;
+            if (_currentState != App.PhotoBoothState.ReviewingPhotos && _currentState != App.PhotoBoothState.Finished)
+            {
+                return;
+            }
             await StartPhotoProcedure();
         }
     }
