@@ -11,9 +11,13 @@ namespace WinUI3App1 // Ensure this namespace matches your project
 {
     public static class SettingsManager
     {
+        // Constants for settings file names and paths
         private const string SETTINGS_FILENAME = "photobooth_settings.json";
         private const string SETTINGS_BACKUP_FILENAME_SUFFIX = ".bak"; 
         private static readonly string FilePath;
+
+        // Event to signal that settings have been successfully written to disk
+        public static event EventHandler<PhotoBoothSettings> OnSettingsWrittenToDisk;
 
         static SettingsManager()
         {
@@ -152,7 +156,5 @@ namespace WinUI3App1 // Ensure this namespace matches your project
             }
         }
 
-        // Event to signal that settings have been successfully written to disk
-        public static event EventHandler<PhotoBoothSettings> OnSettingsWrittenToDisk;
     }
 }

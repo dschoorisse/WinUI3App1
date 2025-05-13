@@ -16,6 +16,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string LastSuccessfullyDownloadedImageUrl { get; set; } = ""; // To track if current local image matches the remote URL
         public string LastSuccessfullyDownloadedImageHash { get; set; } = "";// To track if current local image matches the remote hash
 
+
         // Guest-Facing UI Texts for Main Page
         public string UiMainPageTitleText { get; set; } = "Welcome!";
         public string UiMainPageSubtitleText { get; set; } = "Capture your perfect moment.";
@@ -27,7 +28,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiCountdown3 { get; set; } = "3";
         public string UiCountdown2 { get; set; } = "2";
         public string UiCountdown1 { get; set; } = "1";
-        public string UiCountdownSmile { get; set; } = "📸"; // Default to existing smiley, can be text like "Smile!"
+        public string UiCountdown0 { get; set; } = "📸"; // Default to existing smiley, can be text like "Smile!"
         public string UiSavingMessage { get; set; } = "Saving...";
         public string UiDoneMessage { get; set; } = "Done!";
 

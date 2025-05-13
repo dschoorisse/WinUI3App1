@@ -38,6 +38,9 @@ namespace WinUI3App1
         private static Timer _heartbeatTimerLogging;
         private static readonly TimeSpan HeartbeatIntervalLogging = TimeSpan.FromSeconds(300); // Configurable interval
 
+        // Global state
+        private static PhotoBoothState _state = PhotoBoothState.Idle; // will be used to track the current state of the app, updates will automatically trigger MQTT status updates
+
 
         public App()
         {
@@ -177,7 +180,7 @@ namespace WinUI3App1
             }
 
             // Send status over MQTT
-            await TriggerStatusUpdate(appState: "Launched");
+            State = PhotoBoothState.Starting;
 
             // 8. Setup other app-level handlers
             MainWindow.Closed += OnMainWindowClosed;
@@ -242,6 +245,7 @@ namespace WinUI3App1
                 newPageName = e.SourcePageType.Name;
             }
 
+            // Log only if the page name has changed to avoid excessive logging
             if (CurrentPageName != newPageName)
             {
                 string previousPageName = CurrentPageName;
@@ -252,18 +256,9 @@ namespace WinUI3App1
                 // Using a generic "active" state; specific page actions might set more detailed states.
                 if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
                 {
-                    await TriggerStatusUpdate(appState: "Idle");
+                    await PublishPhotoBoothStatusJsonAsync();
                 }
             }
-        }
-
-        // Centralized method to publish the full JSON status
-        public static async Task TriggerStatusUpdate(string appState = "active", bool? cameraConnectedStatus = null, bool retain = true)
-        {
-            // cameraConnectedStatus could be fetched from a global state or service if available,
-            // otherwise it's passed in or defaults to null.
-            // For now, we don't have a global camera status readily available here.
-            await PublishStatusJsonAsync(appState, cameraConnectedStatus, retain);
         }
 
         private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
@@ -271,7 +266,7 @@ namespace WinUI3App1
             if (isConnected)
             {
                 Logger.Information("MQTT: Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
-                await PublishStatusAsync("online", true); // Retain online status
+                await PublishConnectionStatusAsync("online"); // Retain online status
             }
             else
             {
@@ -279,8 +274,12 @@ namespace WinUI3App1
             }
         }
 
-        public static async Task PublishStatusAsync(string statusPayload, bool retain = false)
+        public static async Task PublishConnectionStatusAsync(string statusPayload)
         {
+            // The connection status should be retained to ensure that the last known status is available
+            // in case of a client shutdown. 
+            bool retain = true; 
+
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
                 string topic = $"photobooth/{PhotoboothIdentifier}/connection";
@@ -299,7 +298,7 @@ namespace WinUI3App1
             }
         }
 
-        public static async Task PublishStatusJsonAsync(string state, bool? cameraConnected = null, bool retain = false)
+        public static async Task PublishPhotoBoothStatusJsonAsync()
         {
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
@@ -309,22 +308,22 @@ namespace WinUI3App1
                     var statusObject = new
                     {
                         photoboothId = PhotoboothIdentifier,
-                        state,
+                        state = State,
                         currentPage = CurrentPageName, // Include current page name
                         timestamp = DateTime.UtcNow.ToString("o"),
-                        cameraConnected
+                        cameraConnected = false, // Placeholder, replace with actual camera status
                     };
                     string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject);
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain: false);
                 }
                 catch (Exception ex)
                 {
-                    Logger?.Error(ex, "MQTT: Failed to publish JSON status '{State}' to topic '{Topic}'", PhotoboothIdentifier, state, topic);
+                    Logger?.Error($"MQTT: Failed to publish JSON status '{State}' to topic '{topic}'. Exception: {ex}");
                 }
             }
             else
             {
-                Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier, state);
+                Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier);
             }
         }
 
@@ -721,14 +720,41 @@ namespace WinUI3App1
 
         public enum PhotoBoothState
         {
+            Starting,
             Idle,
+            LoadinPhotoBoothPage,
+            ResettingPhotoBoothPage,
             ShowingInstructions,
             Countdown,
             TakingPhoto,
+            DownloadingPhotoFromCamera,
+            RecordingVideo,
             ShowingSinglePhoto,
             ReviewingPhotos,
-            Saving, Finished
+            Saving, 
+            Processing,
+            Uploading,
+            Finished
         }
+
+        public static PhotoBoothState State
+        {
+            get => _state;
+            set
+            {
+                if (_state != value)
+                {
+                    string oldStateForLog = _state.ToString();
+                    _state = value;
+                    Logger?.Information("App: Photobooth Operational State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
+
+                    // Automatically publish the full status when this state changes
+                    // Fire-and-forget. cameraConnected is null here as it's a general state change. Retain is true.
+                    _ = PublishPhotoBoothStatusJsonAsync();
+                }
+            }
+        }
+
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.

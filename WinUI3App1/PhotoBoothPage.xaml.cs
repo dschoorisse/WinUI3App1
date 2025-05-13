@@ -17,9 +17,6 @@ namespace WinUI3App
 {
     public sealed partial class PhotoBoothPage : Page
     {
-        
-
-        private App.PhotoBoothState _currentState = App.PhotoBoothState.Idle;
         private int _photosTaken = 0;
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>();
@@ -34,9 +31,11 @@ namespace WinUI3App
             this.Loaded += PhotoBoothPage_Loaded;
         }
 
+
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
-            await App.TriggerStatusUpdate(appState: "Idle");
+
+            App.State = App.PhotoBoothState.LoadinPhotoBoothPage;
 
             await LoadPageBackgroundAsync();
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
@@ -131,13 +130,13 @@ namespace WinUI3App
         private async void ResetProcedure()
         {
             App.Logger.Debug("Resetting photo booth procedure...");
-
-            await App.TriggerStatusUpdate(appState: "Resetting");
+            App.State = App.PhotoBoothState.ResettingPhotoBoothPage;
 
             // Reset the state and UI elements
             _photosTaken = 0;
             _photoPaths.Clear();
-            _currentState = App.PhotoBoothState.Idle;
+
+            App.State = App.PhotoBoothState.Idle;
 
             InstructionTextBackground.Opacity = 0;
             CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
@@ -162,7 +161,7 @@ namespace WinUI3App
             // Make ProgressIndicatorPanel visible with pending dots
             ResetProcedure(); 
 
-            _currentState = App.PhotoBoothState.ShowingInstructions;
+            App.State = App.PhotoBoothState.ShowingInstructions;
             await ShowInstructions();
         }
 
@@ -171,7 +170,7 @@ namespace WinUI3App
             App.Logger.Debug("Showing instructions...");
 
             // Show instructions to the user
-            _currentState = App.PhotoBoothState.ShowingInstructions;
+            App.State = App.PhotoBoothState.ShowingInstructions;
 
             string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
             InstructionText.Text = string.Format(instructionFormat, TOTAL_PHOTOS_TO_TAKE);
@@ -205,17 +204,22 @@ namespace WinUI3App
             // This method handles the countdown before taking a photo
             App.Logger.Debug("Starting countdown...");
 
-            if (_photosTaken == 0) { CameraPlaceholderImage.Visibility = Visibility.Visible; }
-            else { CameraPlaceholderImage.Visibility = Visibility.Collapsed; }
+            // If this is the first photo, show the camera placeholder image
+            if (_photosTaken == 0) { 
+                CameraPlaceholderImage.Visibility = Visibility.Visible; 
+            }
+            else { 
+                CameraPlaceholderImage.Visibility = Visibility.Collapsed; 
+            }
             TakenPhotoImage.Opacity = 0;
 
             // Use texts from settings, with fallbacks
             string step3Text = App.CurrentSettings?.UiCountdown3 ?? "3";
             string step2Text = App.CurrentSettings?.UiCountdown2 ?? "2";
             string step1Text = App.CurrentSettings?.UiCountdown1 ?? "1";
-            string smileText = App.CurrentSettings?.UiCountdownSmile ?? "📸";
+            string step0Text = App.CurrentSettings?.UiCountdown0 ?? "📸";
 
-            string[] countdownSteps = { step3Text, step2Text, step1Text, smileText };
+            string[] countdownSteps = { step3Text, step2Text, step1Text, step0Text };
 
             foreach (var step in countdownSteps)
             {
@@ -225,11 +229,15 @@ namespace WinUI3App
 
                 var daUkf = new DoubleAnimationUsingKeyFrames();
                 Storyboard.SetTarget(daUkf, CountdownTextBackground); Storyboard.SetTargetProperty(daUkf, "Opacity");
+
+                // KeyFrames for the fade-in and fade-out effect
                 var kfFadeInStart = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0)), Value = 0 };
                 var kfFadeInEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(250)), Value = 1, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut } };
                 var kfHold = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(750)), Value = 1 };
                 var kfFadeOutEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1000)), Value = 0, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn } };
+
                 daUkf.KeyFrames.Add(kfFadeInStart); daUkf.KeyFrames.Add(kfFadeInEnd); daUkf.KeyFrames.Add(kfHold); daUkf.KeyFrames.Add(kfFadeOutEnd);
+
                 var sb = new Storyboard(); sb.Children.Add(daUkf); sb.Begin();
                 await Task.Delay(1000);
             }
@@ -239,13 +247,16 @@ namespace WinUI3App
 
         private async Task StartNextPhotoCapture()
         {
-            App.Logger.Debug($"Starting next photo capture, current state: {_currentState}");
+
+            App.Logger.Debug($"Starting next photo capture, current state: {App.State}");
+
 
             if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
             {
                 // Proceed to take the next photo
-                App.Logger.Debug($"Taking photo {_photosTaken + 1} of {TOTAL_PHOTOS_TO_TAKE}");
-                _currentState = App.PhotoBoothState.Countdown;
+                App.Logger.Information($"Taking photo {_photosTaken + 1} of {TOTAL_PHOTOS_TO_TAKE}");
+
+                App.State = App.PhotoBoothState.Countdown;
                 CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
                 PhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
 
@@ -267,13 +278,13 @@ namespace WinUI3App
         private async Task TakePhotoSimulation()
         {
             // Send status update over MQTT
-            await App.TriggerStatusUpdate(appState: "PhotoProcedure");
+            App.State = App.PhotoBoothState.TakingPhoto;
 
             // Log the start of this photo simulation step, indicating which photo number this is (1-based)
             App.Logger.Information("TakePhotoSimulation: Starting simulation for photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
             // Set the application's current state to indicate a photo is being "taken"
-            _currentState = App.PhotoBoothState.TakingPhoto;
+            App.State = App.PhotoBoothState.TakingPhoto;
             App.Logger.Debug("TakePhotoSimulation: State set to TakingPhoto.");
 
             // Simulate a short delay for actual camera capture time
@@ -368,7 +379,7 @@ namespace WinUI3App
 
         private async Task ShowAllPhotosForReview()
         {
-            _currentState = App.PhotoBoothState.ReviewingPhotos;
+            App.State = App.PhotoBoothState.ReviewingPhotos;
 
             // Hide elements related to individual capture/preview
             CaptureElementsViewbox.Visibility = Visibility.Collapsed;
@@ -405,15 +416,15 @@ namespace WinUI3App
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
         {
             // Handle the accept button click event
-            App.Logger.Information("Accept button clicked. Current state: {_currentState}");
+            App.Logger.Information("Accept button clicked. Current state: {App.State}");
 
-            if (_currentState != App.PhotoBoothState.ReviewingPhotos)
+            if (App.State != App.PhotoBoothState.ReviewingPhotos)
             {
                 return;
             }
 
             // Proceed to save the photos
-            _currentState = App.PhotoBoothState.Saving;
+            App.State = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
             PhotoGallery.Visibility = Visibility.Collapsed; ActionButtonsPanel.Visibility = Visibility.Collapsed;
 
@@ -427,13 +438,13 @@ namespace WinUI3App
             await Task.Delay(1500);
 
             OverlayGrid.Visibility = Visibility.Collapsed;
-            _currentState = App.PhotoBoothState.Finished;
+            App.State = App.PhotoBoothState.Finished;
             if (this.Frame != null && this.Frame.CanGoBack) { this.Frame.GoBack(); }
         }
 
         private async void RetakeButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_currentState != App.PhotoBoothState.ReviewingPhotos && _currentState != App.PhotoBoothState.Finished)
+            if (App.State != App.PhotoBoothState.ReviewingPhotos && App.State != App.PhotoBoothState.Finished)
             {
                 return;
             }
