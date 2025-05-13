@@ -172,6 +172,9 @@ namespace WinUI3App1
             this.UnhandledException += App_UnhandledException;
             Logger.Information("Application initialized and launched.");
 
+            // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
+            SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
+
             // Send status over MQTT
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
@@ -236,7 +239,7 @@ namespace WinUI3App1
         {
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
-                string topic = $"photobooth/{PhotoboothIdentifier}/status";
+                string topic = $"photobooth/{PhotoboothIdentifier}/connection";
                 try
                 {
                     await MqttServiceInstance.PublishAsync(topic, statusPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
@@ -256,7 +259,7 @@ namespace WinUI3App1
         {
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
-                string topic = $"photobooth/{PhotoboothIdentifier}/status/json";
+                string topic = $"photobooth/{PhotoboothIdentifier}/status";
                 try
                 {
                     var statusObject = new
@@ -528,6 +531,48 @@ namespace WinUI3App1
             }
             return null; // Return null if download or save failed
         }
+
+        private static async void App_OnSettingsWrittenToDisk_Handler(object sender, PhotoBoothSettings activeSettings)
+        {
+            if (activeSettings == null)
+            {
+                Logger?.Warning("App: OnSettingsWrittenToDisk triggered with null settings. Cannot report current state.");
+                return;
+            }
+
+            Logger?.Information("App: Settings have been written to disk. Reporting current active settings state via MQTT. Timestamp: {Timestamp}", activeSettings.LastModifiedUtc);
+
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
+            {
+                string topic = $"photobooth/{PhotoboothIdentifier}/settings/current_state";
+                try
+                {
+                    var settingsReportPayload = new
+                    {
+                        photoboothId = PhotoboothIdentifier,
+                        activeSettingsTimestamp = activeSettings.LastModifiedUtc.ToString("o"), // ISO 8601 UTC
+                                                                                                // Optionally, add a simple "status" or a version number if you implement one
+                                                                                                // For example: appVersion = GetAppVersionSomehow(),
+                    };
+
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(settingsReportPayload,
+                        new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+
+                    // This status message should typically NOT be retained. It's a point-in-time snapshot.
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, false);
+                    Logger?.Information("App: Successfully published current settings state to {Topic}", topic);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.Error(ex, "App: Failed to publish current settings state to MQTT topic {Topic}", topic);
+                }
+            }
+            else
+            {
+                Logger?.Warning("App: Cannot publish current settings state. MQTT not connected, service not available, or PhotoboothIdentifier is missing.");
+            }
+        }
+
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.

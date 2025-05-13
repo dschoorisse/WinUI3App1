@@ -1,4 +1,5 @@
 ﻿// SettingsManager.cs
+using Serilog;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -11,23 +12,28 @@ namespace WinUI3App1 // Ensure this namespace matches your project
     public static class SettingsManager
     {
         private const string SETTINGS_FILENAME = "photobooth_settings.json";
+        private const string SETTINGS_BACKUP_FILENAME_SUFFIX = ".bak"; 
         private static readonly string FilePath;
 
         static SettingsManager()
         {
-            // Ensure LocalFolder path is available. This might require the app to be packaged
-            // or have appropriate permissions if unpackaged for LocalFolder access.
-            // For unpackaged apps, AppContext.BaseDirectory might be more reliable for a config file
-            // you intend to ship or allow easy user access to. Let's stick with LocalFolder for app-specific data.
+             // Ensure LocalFolder path is available. This might require the app to be packaged
+             // or have appropriate permissions if unpackaged for LocalFolder access.
+             // For unpackaged apps, AppContext.BaseDirectory might be more reliable for a config file
+             // you intend to ship or allow easy user access to. Let's stick with LocalFolder for app-specific data.
             try
             {
+                // Attempt to get the LocalFolder path for storing settings  
                 FilePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, SETTINGS_FILENAME);
+                App.Logger?.Debug($"SettingsManager: LocalFolder path resolved to {FilePath}");
             }
-            catch (Exception ex) // IOException can occur if LocalFolder is not accessible (e.g. very early in unpackaged app init)
+            catch (Exception ex)
             {
-                Debug.WriteLine($"Error getting LocalFolder path for settings: {ex.Message}. Falling back to BaseDirectory.");
+                // Log fallback to BaseDirectory in case of an error  
+                App.Logger?.Debug($"Error getting LocalFolder path for settings: {ex.Message}. Falling back to BaseDirectory.");
                 // Fallback for unpackaged apps or if LocalFolder is problematic:
                 FilePath = Path.Combine(AppContext.BaseDirectory, SETTINGS_FILENAME);
+                App.Logger?.Debug($"SettingsManager: Fallback path resolved to {FilePath}");
             }
         }
 
@@ -35,34 +41,47 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         {
             try
             {
+                App.Logger?.Debug($"SettingsManager: Attempting to load settings from {FilePath}");
+
                 if (File.Exists(FilePath))
                 {
-                    
+                    App.Logger?.Debug($"SettingsManager: Settings file found at {FilePath}");
                     string json = await File.ReadAllTextAsync(FilePath);
+
                     if (!string.IsNullOrWhiteSpace(json))
                     {
+                        App.Logger?.Debug("SettingsManager: Deserializing settings JSON");
                         var settings = JsonSerializer.Deserialize<PhotoBoothSettings>(json);
+
                         if (settings != null)
                         {
                             // If LastModifiedUtc was missing from an old JSON, it might be DateTime.MinValue
                             // The PhotoBoothSettings constructor now sets it to UtcNow for new instances.
                             // If loaded and it's MinValue, could update it to file's last write time or now.
-                            // For simplicity, constructor handles new instances. Loaded instances will have their value.
-                            Debug.WriteLine($"SettingsManager: Settings loaded successfully from {FilePath}. Timestamp: {settings.LastModifiedUtc}");
                             return settings;
                         }
+                        else
+                        {
+                            App.Logger?.Debug("SettingsManager: Deserialized settings object is null. Using default settings.");
+                        }
+                    }
+                    else
+                    {
+                        App.Logger?.Debug("SettingsManager: Settings file is empty. Using default settings.");
                     }
                 }
-                Debug.WriteLine($"Settings file not found or empty at {FilePath}. Creating with defaults.");
+                else
+                {
+                    App.Logger?.Debug($"SettingsManager: Settings file not found at {FilePath}. Creating with defaults.");
+                }
             }
             catch (JsonException jsonEx)
             {
-                Debug.WriteLine($"Error deserializing settings from JSON at {FilePath}: {jsonEx.Message}. Using default settings and overwriting.");
-                // Optionally, back up the corrupted file before overwriting
+                App.Logger?.Debug($"SettingsManager: JSON deserialization error: {jsonEx.Message}. Using default settings and overwriting.");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error loading settings from {FilePath}: {ex.Message}. Using default settings.");
+                App.Logger?.Debug($"SettingsManager: Error loading settings: {ex.Message}. Using default settings.");
             }
 
             // If file doesn't exist, is empty, or deserialization fails, return new defaults
@@ -76,30 +95,65 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         {
             if (settings == null)
             {
-                Debug.WriteLine("SettingsManager: Attempted to save null settings. Operation aborted.");
+                App.Logger?.Debug("SettingsManager: Attempted to save null settings. Operation aborted.");
                 return;
             }
 
-            if (!isFromRemoteUpdate) // If changes are from local UI (SettingsPage)
+            // If changes are from local UI (SettingsPage)
+            if (!isFromRemoteUpdate)
             {
-                settings.LastModifiedUtc = DateTime.UtcNow; // Update timestamp to now
-                Debug.WriteLine($"SettingsManager: Local save. Updating LastModifiedUtc to: {settings.LastModifiedUtc}");
+                settings.LastModifiedUtc = DateTime.UtcNow;
+                App.Logger?.Debug($"SettingsManager: Local save. Updating LastModifiedUtc to: {settings.LastModifiedUtc}");
             }
             else // If from remote, the timestamp in 'settings' object is the one from the server
             {
-                Debug.WriteLine($"SettingsManager: Remote save. Preserving LastModifiedUtc: {settings.LastModifiedUtc}");
+                App.Logger?.Debug($"SettingsManager: Remote save. Preserving LastModifiedUtc: {settings.LastModifiedUtc}");
             }
 
             try
             {
-                // ... (directory creation, serialization, File.WriteAllTextAsync as before) ...
-                var options = new JsonSerializerOptions { WriteIndented = true };
+                string directory = Path.GetDirectoryName(FilePath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                // --- Backup logic before overwriting with remote settings ---
+                if (isFromRemoteUpdate && File.Exists(FilePath))
+                {
+                    string backupFilePath = FilePath + SETTINGS_BACKUP_FILENAME_SUFFIX;
+                    try
+                    {
+                        File.Copy(FilePath, backupFilePath, true); // true to overwrite existing backup
+                        App.Logger?.Debug($"SettingsManager: Backed up current settings to {backupFilePath}");
+                        App.Logger?.Information("SettingsManager: Backed up current settings to {BackupFilePath} before applying remote update.", backupFilePath);
+                    }
+                    catch (Exception backupEx)
+                    {
+                        App.Logger?.Debug($"SettingsManager: Error creating settings backup: {backupEx.Message}");
+                        App.Logger?.Error(backupEx, "SettingsManager: Failed to create settings backup before remote update.");
+                        // Decide if you want to proceed with the save even if backup fails. Usually yes.
+                    }
+                }
+                // --- End of Backup logic ---
+
+                var options = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
                 string json = JsonSerializer.Serialize(settings, options);
                 await File.WriteAllTextAsync(FilePath, json);
-                Debug.WriteLine($"SettingsManager: Settings saved to {FilePath}");
+                App.Logger?.Debug($"SettingsManager: Settings saved successfully to {FilePath}");
+                App.Logger?.Information("SettingsManager: Settings saved to {FilePath}. Effective Timestamp: {Timestamp}", FilePath, settings.LastModifiedUtc);
 
+                // Trigger event that settings have been written (for reporting current state)
+                OnSettingsWrittenToDisk?.Invoke(null, settings);
+                App.Logger?.Debug("SettingsManager: OnSettingsWrittenToDisk event triggered.");
             }
-            catch (Exception ex) { /* ... log error ... */ }
+            catch (Exception ex)
+            {
+                App.Logger?.Debug($"SettingsManager: Error saving settings to {FilePath}: {ex.Message}");
+            }
         }
+
+        // Event to signal that settings have been successfully written to disk
+        public static event EventHandler<PhotoBoothSettings> OnSettingsWrittenToDisk;
     }
 }
