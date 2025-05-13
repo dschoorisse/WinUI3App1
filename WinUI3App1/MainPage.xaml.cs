@@ -51,7 +51,7 @@ namespace WinUI3App
             LoadBackgroundFromSettings();
 
             // Log application start
-            AddLog("Application started");
+            App.Logger?.Information("Application started");
         }
 
 
@@ -304,7 +304,7 @@ namespace WinUI3App
 
         private void TakePhotoButton_Click(object sender, RoutedEventArgs e)
         {
-            AddLog("Photo capture initiated");
+            App.Logger?.Information("Photo capture initiated");
 
             // Navigate to photo capture page
             Frame.Navigate(typeof(PhotoBoothPage));
@@ -312,14 +312,14 @@ namespace WinUI3App
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)
         {
-            AddLog("Video recording initiated");
+            App.Logger?.Information("Video recording initiated");
             // Navigate to video recording page
             // Frame.Navigate(typeof(VideoRecordingPage));
         }
 
         private void OpenSetttingsPage()
         {
-            AddLog("Opening advanced settings page");
+            App.Logger?.Information("Opening advanced settings page");
             Frame.Navigate(typeof(SettingsPage));
         }
 
@@ -329,7 +329,7 @@ namespace WinUI3App
             // Check if the pressed key is 'S' or 's' (VirtualKey.S handles both cases)
             if (e.Key == Windows.System.VirtualKey.S)
             {
-                AddLog("Keyboard 'S' key press detected");
+                App.Logger?.Warning("Keyboard 'S' key press detected");
 
                 // Mark the event as handled to prevent further processing
                 e.Handled = true;
@@ -338,7 +338,6 @@ namespace WinUI3App
                 OpenSetttingsPage();
             }
         }
-
     }
 
     public class CornerTouch
