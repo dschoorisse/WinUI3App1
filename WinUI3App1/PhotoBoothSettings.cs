@@ -10,6 +10,13 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow; // Last modified date
         public string PhotoboothId { get; set; } = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}"; // Ensure safe ID
 
+        // Properties for remote background image management
+        public string RemoteBackgroundImageUrl { get; set; } = "";    // URL from where to download the background
+        public string RemoteBackgroundImageHash { get; set; } = "";   // Optional: SHA256 hash of the remote image for verification/update checks
+        public string LastSuccessfullyDownloadedImageUrl { get; set; } = ""; // To track if current local image matches the remote URL
+        public string LastSuccessfullyDownloadedImageHash { get; set; } = "";// To track if current local image matches the remote hash
+
+
         // Guest-Facing UI Texts for Main Page
         public string UiMainPageTitleText { get; set; } = "Welcome!";
         public string UiMainPageSubtitleText { get; set; } = "Capture your perfect moment.";

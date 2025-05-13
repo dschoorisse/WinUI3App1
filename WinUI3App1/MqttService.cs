@@ -43,7 +43,7 @@ namespace WinUI3App1
             _remoteSettingsSetTopic = $"photobooth/{_photoboothId}/settings/set";
 
             // --- Definieer LWT Eigenschappen ---
-            string lastWillTopic = $"photobooth/{_photoboothId}/status";
+            string lastWillTopic = $"photobooth/{_photoboothId}/connection";
             string lastWillPayload = "disconnected"; // Payload voor LWT
             var lastWillQoS = MqttQualityOfServiceLevel.AtLeastOnce; // QoS voor LWT
             bool lastWillRetain = true; // Retain flag voor LWT
@@ -420,7 +420,7 @@ namespace WinUI3App1
                     try
                     {
                         // --- PUBLISH EXPLICIETE "OFFLINE_EXPECTED" STATUS ---
-                        string offlineTopic = $"photobooth/{_photoboothId}/status";
+                        string offlineTopic = $"photobooth/{_photoboothId}/connection";
                         string offlinePayload = "shutdown"; // Payload voor normale shutdown
                         var offlineMessage = new MqttApplicationMessageBuilder()
                             .WithTopic(offlineTopic)

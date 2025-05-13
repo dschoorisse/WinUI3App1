@@ -11,10 +11,10 @@ using Serilog.Events;
 using WinUI3App;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using MQTTnet;
-using Serilog.Formatting.Compact;
-using MQTTnet.Extensions.ManagedClient;
-using Serilog.Sinks.Mqtt;
+using Microsoft.UI.Dispatching;
+using System.Net.Http;
+using Windows.Storage;
+using System.Security.Cryptography;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -326,65 +326,207 @@ namespace WinUI3App1
             await Log.CloseAndFlushAsync(); // Ensure Serilog flushes all sinks
         }
 
-
         private async void OnRemoteSettingsUpdated(object sender, EventArgs e)
         {
-            Logger.Information("App: Event received - Remote settings have been updated. Reloading settings now.");
+            App.Logger?.Information("App: Event received - Remote settings have been updated. Attempting to reload and apply.");
+            PhotoBoothSettings newSettings = null;
+            PhotoBoothSettings oldEffectiveSettings = CurrentSettings; // Keep a reference to settings before reload
 
-            // Ensure this runs on the UI thread if it has potential to touch UI or navigate,
-            // though just updating App.CurrentSettings and PhotoboothIdentifier should be safe.
-            // MainWindow.DispatcherQueue?.TryEnqueue(async () => { ... }); might be needed for more complex UI reactions.
+            try { newSettings = await SettingsManager.LoadSettingsAsync(); }
+            catch (Exception ex) { App.Logger?.Error(ex, "App: Failed to reload settings after remote update. Aborting apply."); return; }
 
-            var newSettings = await SettingsManager.LoadSettingsAsync();
             if (newSettings != null)
             {
-                CurrentSettings = newSettings; // Update the globally accessible settings object
+                CurrentSettings = newSettings; // Update App.CurrentSettings to the latest from file (which was just saved by MqttService)
+                                               // ... (PhotoboothIdentifier update logic as before) ...
+                App.Logger?.Information("App: Settings reloaded into App.CurrentSettings. Current Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
 
-                // Re-evaluate PhotoboothIdentifier if it could have changed remotely
-                string oldId = PhotoboothIdentifier;
-                PhotoboothIdentifier = CurrentSettings.PhotoboothId;
-                if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) || PhotoboothIdentifier.Contains("/") /*...etc...*/ )
-                {
-                    PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
-                    Logger.Warning("App: Invalid PhotoboothId ('{OldRemoteId}') in remotely updated settings, using default: {DefaultId}", oldId, PhotoboothIdentifier);
-                    CurrentSettings.PhotoboothId = PhotoboothIdentifier;
-                    // Save back the corrected ID if it was bad from remote source (rare, server should send valid ID)
-                    await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // true to keep remote timestamp if possible or handle appropriately
-                }
-                if (oldId != PhotoboothIdentifier)
-                {
-                    Logger.Information("App: PhotoboothIdentifier changed via remote settings from '{OldId}' to '{NewId}'. MQTT service might need re-initialization if critical topics changed.", oldId, PhotoboothIdentifier);
-                    // TODO: Handle MqttService re-initialization if PhotoboothIdentifier affects its core topics/LWT.
-                    // This might involve disposing and newing up MqttServiceInstance.
-                }
 
-                Logger.Information("App: Settings reloaded. Current Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+                // --- Handle Background Image Download ---
+                bool backgroundChanged = false;
+                string newLocalBackgroundImagePath = oldEffectiveSettings?.BackgroundImagePath ?? ""; // Start with old path
 
-                // TODO: Implement a strategy to notify active pages to refresh their UI.
-                // For example, if MainPage is active, call a public RefreshUI() method on it.
-                if (MainWindow.Content is Frame rootFrame)
+                if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) &&
+                    (CurrentSettings.RemoteBackgroundImageUrl != CurrentSettings.LastSuccessfullyDownloadedImageUrl ||
+                     (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageHash) && CurrentSettings.RemoteBackgroundImageHash != CurrentSettings.LastSuccessfullyDownloadedImageHash) ||
+                     string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath) || // If no local path is set yet
+                     !File.Exists(CurrentSettings.BackgroundImagePath)) // Or if current local file doesn't exist
+                   )
                 {
-                    if (rootFrame.Content is MainPage mainPageInstance)
+                    App.Logger?.Information("App: New or updated remote background image URL/hash detected, or local file missing. Attempting download.");
+                    string downloadedPath = await DownloadAndSaveImageAsync(
+                        CurrentSettings.RemoteBackgroundImageUrl,
+                        CurrentSettings.RemoteBackgroundImageHash,
+                        // Use hash of URL as part of filename seed if generating unique filenames, or just use fixed name
+                        (CurrentSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString())
+                    );
+
+                    if (!string.IsNullOrEmpty(downloadedPath))
                     {
-                        Logger.Information("App: Requesting MainPage to refresh its UI from new settings.");
-                        mainPageInstance.LoadDynamicUITexts(); // Re-load texts
-                        _ = mainPageInstance.LoadBackgroundFromSettings(); // Re-load background (make LoadBackground public or call a wrapper)
+                        newLocalBackgroundImagePath = downloadedPath;
+                        CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath; // Update the path for UI use
+                        CurrentSettings.LastSuccessfullyDownloadedImageUrl = CurrentSettings.RemoteBackgroundImageUrl;
+                        CurrentSettings.LastSuccessfullyDownloadedImageHash = CurrentSettings.RemoteBackgroundImageHash;
+                        backgroundChanged = true;
+                        App.Logger?.Information("App: Background image updated locally to: {Path}", newLocalBackgroundImagePath);
                     }
-                    else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                    else
                     {
-                        // PhotoBoothPage loads texts in its Loaded event. If it's already loaded,
-                        // it might need an explicit refresh method or re-navigation.
-                        // For now, it will pick up new texts if it's reloaded/re-navigated to.
-                        // Consider adding a RefreshUITexts() method to PhotoBoothPage as well.
-                        Logger.Information("App: PhotoBoothPage is active. It will use new settings on next load or if it has a refresh mechanism.");
+                        App.Logger?.Warning("App: Failed to download new remote background. Current background (if any) will be kept or cleared if path was invalid.");
+                        // If download fails, decide behavior: keep old BackgroundImagePath or clear it?
+                        // Let's assume if RemoteBackgroundImageUrl was set but download failed, we clear the path to avoid using stale image.
+                        if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl))
+                        {
+                            newLocalBackgroundImagePath = ""; // Clear path on failure if a remote URL was specified
+                            CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
+                            backgroundChanged = true; // Path changed to empty
+                        }
                     }
                 }
-                // A more robust way is an event aggregator or messaging system for cross-page communication.
+                else if (string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
+                {
+                    // Remote URL was cleared, so local background should also be cleared
+                    App.Logger?.Information("App: RemoteBackgroundImageUrl is empty. Clearing local background image path.");
+                    newLocalBackgroundImagePath = "";
+                    CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
+                    CurrentSettings.LastSuccessfullyDownloadedImageUrl = ""; // Clear tracking too
+                    CurrentSettings.LastSuccessfullyDownloadedImageHash = "";
+                    backgroundChanged = true;
+                }
+
+
+                // If background or other critical settings changed, save CurrentSettings again
+                // The SaveSettingsAsync in MqttService saved what was received from MQTT.
+                // Now we might have updated it further (e.g., BackgroundImagePath, LastSuccessfullyDownloaded info).
+                if (backgroundChanged) // Or any other property modified here after loading from remote
+                {
+                    App.Logger?.Information("App: Settings changed after remote update. Saving updated settings.");
+                    await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // 'true' as this is part of remote update flow, preserve LastModifiedUtc from MQTT push
+                }
+
+                // --- Dispatch UI updates to the UI thread ---
+                if (MainWindow?.DispatcherQueue != null)
+                {
+                    MainWindow.DispatcherQueue.TryEnqueue(async () =>
+                    {
+                        App.Logger?.Information("App: Now on UI thread. Attempting to refresh active page UI.");
+                        try
+                        {
+                            if (MainWindow.Content is Frame rootFrame) // Ensure 'Frame' is Microsoft.UI.Xaml.Controls.Frame
+                            {
+                                if (rootFrame.Content is MainPage mainPageInstance)
+                                {
+                                    App.Logger?.Information("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
+                                    // These methods in MainPage.xaml.cs must be public
+                                    mainPageInstance.LoadDynamicUITexts();
+                                    await mainPageInstance.LoadBackgroundFromSettings();
+                                    App.Logger?.Information("App: MainPage UI refresh calls completed.");
+                                }
+                                else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                                {
+                                    App.Logger?.Information("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
+                                    // PhotoBoothPage loads its texts/settings in its Page_Loaded or StartPhotoProcedure.
+                                    // If it needs to react to live changes while already active (e.g., for button texts if review screen is shown),
+                                    // it would need a public method like RefreshConfigurableTexts().
+                                    // photoBoothPageInstance.RefreshConfigurableTexts(); // Example call
+                                    // Its background is also loaded on Page_Loaded. A live background change would need similar handling.
+                                    // await photoBoothPageInstance.LoadPageBackgroundAsync(); // If such a public method exists
+                                }
+                                // Add 'else if' for other pages if they need live UI updates from settings
+                            }
+                            else
+                            {
+                                App.Logger?.Warning("App: MainWindow.Content is not a Frame on UI thread. Cannot determine active page to refresh.");
+                            }
+                        }
+                        catch (Exception uiEx)
+                        {
+                            App.Logger?.Error(uiEx, "App: Exception occurred during UI refresh on UI thread from OnRemoteSettingsUpdated.");
+                        }
+                    });
+                }
+                else
+                {
+                    App.Logger?.Error("App: MainWindow or its DispatcherQueue is null. Cannot dispatch UI updates for remote settings.");
+                }
             }
             else
             {
-                Logger.Error("App: Failed to reload settings after remote update notification.");
+                App.Logger?.Error("App: Reloaded settings (newSettings) are null after remote update notification. No changes applied to App.CurrentSettings.");
             }
+        }
+        private static async Task<string> DownloadAndSaveImageAsync(string imageUrl, string expectedHash, string localFileNameSeed)
+        {
+
+            if (string.IsNullOrEmpty(imageUrl))
+            {
+                App.Logger?.Information("DownloadAndSaveImageAsync: Image URL is empty, skipping download.");
+                return null; // No URL, no local path
+            }
+
+            App.Logger?.Information("DownloadAndSaveImageAsync: Attempting to download image from {ImageUrl}", imageUrl);
+            try
+            {
+                using (var httpClient = new HttpClient())
+                {
+                    byte[] imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
+                    App.Logger?.Debug("DownloadAndSaveImageAsync: Downloaded {ByteCount} bytes.", imageBytes.Length);
+
+                    if (imageBytes.Length == 0)
+                    {
+                        App.Logger?.Warning("DownloadAndSaveImageAsync: Downloaded image is empty for URL {ImageUrl}", imageUrl);
+                        return null;
+                    }
+
+                    // Optional: Verify hash
+                    if (!string.IsNullOrEmpty(expectedHash))
+                    {
+                        App.Logger?.Debug("DownloadAndSaveImageAsync: Hash is provided, so verifying hash for {ImageUrl}", imageUrl);
+
+                        using (var sha256 = SHA256.Create())
+                        {
+                            byte[] computedHashBytes = sha256.ComputeHash(imageBytes);
+                            string computedHash = BitConverter.ToString(computedHashBytes).Replace("-", "").ToLowerInvariant();
+                            if (!computedHash.Equals(expectedHash.ToLowerInvariant(), StringComparison.Ordinal))
+                            {
+                                App.Logger?.Error("DownloadAndSaveImageAsync: Hash mismatch for {ImageUrl}. Expected: {Expected}, Computed: {Computed}", imageUrl, expectedHash, computedHash);
+                                return null; // Hash mismatch, don't use the image
+                            }
+                            App.Logger?.Debug("DownloadAndSaveImageAsync: Image hash verified successfully for {ImageUrl}.", imageUrl);
+                        }
+                    }
+                    else
+                    {
+                        App.Logger?.Debug("DownloadAndSaveImageAsync: No hash provided, skipping verification for {ImageUrl}", imageUrl);
+                    }
+
+                        StorageFolder localCacheFolder = ApplicationData.Current.LocalCacheFolder; // Or LocalFolder
+                    StorageFolder backgroundsFolder = await localCacheFolder.CreateFolderAsync("Backgrounds", CreationCollisionOption.OpenIfExists);
+
+                    // Create a somewhat unique local filename to avoid conflicts if URL changes often,
+                    // or simply overwrite a fixed name like "current_background.jpg".
+                    // Using a hash of the URL or the expected image hash in the filename can help with caching.
+                    string localFileName = $"remote_bg_{localFileNameSeed.ReplaceNonAlphaNumericChars("_")}.jpg";
+                    // Ensure localFileNameSeed is reasonably unique, e.g. hash of URL.
+                    // For simplicity, let's use a fixed name for now and just replace.
+                    localFileName = "current_remote_background.jpg";
+
+
+                    StorageFile imageFile = await backgroundsFolder.CreateFileAsync(localFileName, CreationCollisionOption.ReplaceExisting);
+                    await FileIO.WriteBytesAsync(imageFile, imageBytes);
+                    App.Logger?.Information("DownloadAndSaveImageAsync: Image saved locally to {LocalPath}", imageFile.Path);
+                    return imageFile.Path; // Return the local path
+                }
+            }
+            catch (HttpRequestException httpEx)
+            {
+                App.Logger?.Error(httpEx, "DownloadAndSaveImageAsync: HTTP request failed for {ImageUrl}.", imageUrl);
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "DownloadAndSaveImageAsync: Failed to download or save image from {ImageUrl}.", imageUrl);
+            }
+            return null; // Return null if download or save failed
         }
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
