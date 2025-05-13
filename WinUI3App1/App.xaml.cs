@@ -545,26 +545,26 @@ namespace WinUI3App1
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
                 string topic = $"photobooth/{PhotoboothIdentifier}/settings/current_state";
+
                 try
                 {
-                    var settingsReportPayload = new
-                    {
-                        photoboothId = PhotoboothIdentifier,
-                        activeSettingsTimestamp = activeSettings.LastModifiedUtc.ToString("o"), // ISO 8601 UTC
-                                                                                                // Optionally, add a simple "status" or a version number if you implement one
-                                                                                                // For example: appVersion = GetAppVersionSomehow(),
-                    };
+                    // Serialize the entire 'activeSettings' object.
+                    // This object already includes PhotoboothId, LastModifiedUtc, and all other settings
+                    // that are defined in your PhotoBoothSettings class.
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(activeSettings,
+                        new System.Text.Json.JsonSerializerOptions
+                        {
+                            WriteIndented = true, // Optional: for better readability on MQTT if debugging
+                            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                        });
 
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(settingsReportPayload,
-                        new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
-
-                    // This status message should typically NOT be retained. It's a point-in-time snapshot.
+                    // This message should NOT be retained. It's a point-in-time snapshot of the current state.
                     await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, false);
-                    Logger?.Information("App: Successfully published current settings state to {Topic}", topic);
+                    Logger?.Information("App: Successfully published current settings state (full object) to {Topic}", topic);
                 }
                 catch (Exception ex)
                 {
-                    Logger?.Error(ex, "App: Failed to publish current settings state to MQTT topic {Topic}", topic);
+                    Logger?.Error(ex, "App: Failed to publish current settings state (full object) to MQTT topic {Topic}", topic);
                 }
             }
             else
