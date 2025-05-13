@@ -95,7 +95,7 @@ namespace WinUI3App1
         {
             if (_isDisposed || cancellationToken.IsCancellationRequested || _mqttClient == null) return;
 
-            _logger.Information("MQTT [{PhotoboothId}]: Attempting to connect...", _photoboothId); // Log met ID
+            _logger.Debug("MQTT [{PhotoboothId}]: Attempting to connect...", _photoboothId); // Log met ID
             try
             {
                 if (_mqttClient.IsConnected) { /*...*/ return; }
@@ -376,7 +376,16 @@ namespace WinUI3App1
             if (!_isDisposed)
             {
                 ConnectionStatusChanged?.Invoke(this, isConnected);
-                _logger.Information("MQTT [{PhotoboothId}]: Connection status changed: {IsConnected}", _photoboothId, isConnected);
+
+                if (!isConnected)
+                {
+                    _logger.Error("MQTT [{PhotoboothId}]: Connection status changed: {IsConnected}", _photoboothId, isConnected);
+                }
+                else
+                {
+                    _logger.Debug("MQTT [{PhotoboothId}]: Connection status changed: {IsConnected}", _photoboothId, isConnected);
+
+                }
             }
         }
 

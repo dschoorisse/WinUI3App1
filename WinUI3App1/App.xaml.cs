@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Windowing; // Required for AppWindow and AppWindowPresenterKind
@@ -14,7 +15,6 @@ using Microsoft.UI.Xaml.Navigation;
 using System.Net.Http;
 using Windows.Storage;
 using System.Security.Cryptography;
-using Serilog.Events;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -23,14 +23,16 @@ namespace WinUI3App1
     {
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
-
+        public static MqttService MqttServiceInstance { get; private set; }
         public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
 
         // These will be populated from PhotoBoothSettings loaded via SettingsManager
         public static string PhotoboothIdentifier { get; private set; }
         public static PhotoBoothSettings CurrentSettings { get; private set; } // Expose loaded settings
 
-        public static MqttService MqttServiceInstance { get; private set; }
+        // Our new heartbeat timer
+        private static Timer _heartbeatTimer; 
+        private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(1); // Configurable interval
 
         public App()
         {
@@ -80,7 +82,6 @@ namespace WinUI3App1
             Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
 
             // 4. Initialize MQTT Service (for commands, status, etc.)
-            // ... (Your existing MQTT Service initialization logic using CurrentSettings for broker, port, user, pass) ...
             string mqttBroker = CurrentSettings.MqttBrokerAddress;
             int mqttPort = CurrentSettings.MqttBrokerPort;
             string mqttUser = CurrentSettings.MqttUsername;
@@ -104,7 +105,7 @@ namespace WinUI3App1
 
             const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name, TODO: create list and populoate from JSON
             string currentComputerName = Environment.MachineName;
-            Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
+            Logger.Debug("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
 
             // 6. Setup Navigation Tracking and Initial Page State for MQTT
             if (App.MainWindow is MainWindow mwInstance && mwInstance.AppFrame != null)
@@ -124,7 +125,6 @@ namespace WinUI3App1
                 mwInstance.AppFrame.Navigated += RootFrame_Navigated;
             }
             else { Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events."); }
-
 
             #region fullscreen or windowed
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
@@ -162,7 +162,7 @@ namespace WinUI3App1
             #endregion
 
             MainWindow.Activate();
-            Logger.Information("Main window activated");
+            Logger.Debug("Main window activated");
 
             // 7. Start MQTT Service Connection
             if (MqttServiceInstance != null)
@@ -170,6 +170,9 @@ namespace WinUI3App1
                 try { await MqttServiceInstance.StartAsync(); }
                 catch (Exception ex) { Logger.Error(ex, "MQTT Service failed to start connection on launch for {PhotoboothId}.", PhotoboothIdentifier); }
             }
+
+            // Send status over MQTT
+            await TriggerStatusUpdate(appState: "Launched");
 
             // 8. Setup other app-level handlers
             MainWindow.Closed += OnMainWindowClosed;
@@ -181,16 +184,25 @@ namespace WinUI3App1
 
             // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
             SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
+                       
+            #region Setup heartbeat timer
+            try
+            {
+                // Start the timer. First heartbeat after 'HeartbeatInterval', then repeat at 'HeartbeatInterval'.
+                // If you want an immediate first heartbeat for testing, set the dueTime to TimeSpan.Zero or a small value.
+                _heartbeatTimer = new Timer(
+                    callback: LogHeartbeat,
+                    state: null,             // No state object needed for the callback
+                    dueTime: HeartbeatInterval,  // Time to wait before the first tick
+                    period: HeartbeatInterval); // Interval between subsequent ticks
 
-            // Send status over MQTT
-            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
-            {
-                await TriggerStatusUpdate(appState: "Launched");
+                Logger.Debug("Application Heartbeat logging timer started. Interval: {HeartbeatInterval}", HeartbeatInterval);
             }
-            else
+            catch (Exception ex)
             {
-                Logger.Warning("MQTT Service not connected. Status update not sent.");
+                Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
             }
+            #endregion
         }
 
         private static async void RootFrame_Navigated(object sender, NavigationEventArgs e)
@@ -348,6 +360,26 @@ namespace WinUI3App1
         private async void OnMainWindowClosed(object sender, WindowEventArgs args)
         {
             Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
+
+            // --- Dispose Heartbeat Timer ---
+            if (_heartbeatTimer != null)
+            {
+                try
+                {
+                    // Dispose the timer and wait for any queued callbacks to complete
+                    // (or use Dispose(WaitHandle) for more control if needed, but simple Dispose is usually fine).
+                    _heartbeatTimer.Dispose();
+                    _heartbeatTimer = null; // Nullify to prevent reuse
+                    Logger.Information("Heartbeat timer disposed successfully.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning(ex, "Exception while disposing heartbeat timer.");
+                }
+            }
+            // --- End of Heartbeat Timer Disposal ---
+
+            // --- Dispose MQTT Service ---
             if (MqttServiceInstance != null)
             {
                 MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
@@ -355,8 +387,13 @@ namespace WinUI3App1
                 await MqttServiceInstance.DisposeAsync();
                 Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
             }
+            // --- End of MQTT Service Disposal ---
+
+            // --- Flush logs and close application ---
             Logger.Information("Flushing logs and closing application.");
-            await Log.CloseAndFlushAsync(); // Ensure Serilog flushes all sinks
+            await Log.CloseAndFlushAsync();
+
+
         }
 
         private async void OnRemoteSettingsUpdated(object sender, EventArgs e)
@@ -603,6 +640,25 @@ namespace WinUI3App1
             }
         }
 
+        // In App.xaml.cs (within the App class)
+        private static void LogHeartbeat(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
+        {
+            // Ensure Logger is initialized and we have the necessary info.
+            // This check is important because the timer callback might fire
+            // during app shutdown if not disposed properly, or very early if not careful.
+            if (Logger != null && CurrentSettings != null && !string.IsNullOrEmpty(PhotoboothIdentifier))
+            {
+                Logger.Information("HEARTBEAT: Application is active. Current Page: {CurrentPageName}, Photobooth ID: {PhotoboothID}",
+                    CurrentPageName, // Static property holding the current page name
+                    PhotoboothIdentifier); // Static property holding the Photobooth ID
+            }
+            else
+            {
+                // Fallback to Debug.WriteLine if full logging isn't ready or there's an issue.
+                // This should be rare after proper startup.
+                System.Diagnostics.Debug.WriteLine($"HEARTBEAT (Debug fallback): App active. Page: {CurrentPageName}. Logger/Settings/ID might not be fully initialized.");
+            }
+        }
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.
