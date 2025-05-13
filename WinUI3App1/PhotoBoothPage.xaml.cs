@@ -31,7 +31,6 @@ namespace WinUI3App
             this.Loaded += PhotoBoothPage_Loaded;
         }
 
-
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
 
@@ -42,12 +41,14 @@ namespace WinUI3App
             ResetProcedure();
             await StartPhotoProcedure();
         }
-        // New method to load configurable texts
+
+        // Method to load configurable texts
         private void LoadConfigurableTexts()
         {
             if (App.CurrentSettings == null)
             {
                 App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null in LoadConfigurableTexts. UI texts might use fallbacks.");
+
                 // Set hardcoded fallbacks directly if settings aren't loaded, though this path should ideally not be hit often
                 // if App.OnLaunched correctly populates App.CurrentSettings.
                 InstructionText.Text = string.Format("We are going to take {0} pictures, get ready!", TOTAL_PHOTOS_TO_TAKE); // Fallback
@@ -272,8 +273,6 @@ namespace WinUI3App
                 await ShowAllPhotosForReview();
             }
         }
-
-        // In PhotoBoothPage.xaml.cs
 
         private async Task TakePhotoSimulation()
         {

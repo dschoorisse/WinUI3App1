@@ -272,6 +272,11 @@ namespace WinUI3App1
             {
                 Logger.Information("MQTT: Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
                 await PublishConnectionStatusAsync("online"); // Retain online status
+
+                // Now that MQTT is connected and initial "online" is sent,
+                // publish the full current settings to the /settings/current_state topic.
+                Logger.Information("MQTT: Connection established, now publishing full current settings for {PhotoboothId}.", PhotoboothIdentifier);
+                await PublishCurrentSettingsToMqttAsync(CurrentSettings); 
             }
             else
             {
@@ -647,36 +652,48 @@ namespace WinUI3App1
                 return;
             }
 
-            Logger?.Information("App: Settings have been written to disk. Reporting current active settings state via MQTT. Timestamp: {Timestamp}", activeSettings.LastModifiedUtc);
+            await PublishCurrentSettingsToMqttAsync(activeSettings);
+
+        }
+
+        // Publishes the current settings to MQTT
+        private static async Task PublishCurrentSettingsToMqttAsync(PhotoBoothSettings settingsToPublish)
+        {
+            if (settingsToPublish == null)
+            {
+                Logger?.Warning("App: PublishCurrentSettingsToMqttAsync called with null settings. Aborting.");
+                return;
+            }
 
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
-                string topic = $"photobooth/{PhotoboothIdentifier}/settings/current_state";
+                // Use the PhotoboothIdentifier from the settings object being published for consistency in the topic
+                string currentIdForTopic = settingsToPublish.PhotoboothId ?? PhotoboothIdentifier;
+                string topic = $"photobooth/{currentIdForTopic}/settings/current_state";
+
+                Logger?.Information("App: Publishing current settings to MQTT. Topic: {Topic}, Timestamp: {Timestamp}", topic, settingsToPublish.LastModifiedUtc);
 
                 try
                 {
-                    // Serialize the entire 'activeSettings' object.
-                    // This object already includes PhotoboothId, LastModifiedUtc, and all other settings
-                    // that are defined in your PhotoBoothSettings class.
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(activeSettings,
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(settingsToPublish,
                         new System.Text.Json.JsonSerializerOptions
                         {
-                            WriteIndented = true, // Optional: for better readability on MQTT if debugging
+                            WriteIndented = true,
                             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
                         });
 
-                    // This message should NOT be retained. It's a point-in-time snapshot of the current state.
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, false);
-                    Logger?.Information("App: Successfully published current settings state (full object) to {Topic}", topic);
+                    // This message should NOT be retained; it's a point-in-time snapshot.
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, false);
+                    Logger?.Information("App: Successfully published current settings (full object) to {Topic}", topic);
                 }
                 catch (Exception ex)
                 {
-                    Logger?.Error(ex, "App: Failed to publish current settings state (full object) to MQTT topic {Topic}", topic);
+                    Logger?.Error(ex, "App: Failed to publish current settings (full object) to MQTT topic {Topic}", topic);
                 }
             }
             else
             {
-                Logger?.Warning("App: Cannot publish current settings state. MQTT not connected, service not available, or PhotoboothIdentifier is missing.");
+                Logger?.Warning("App: Cannot publish current settings. MQTT not connected, service not available, or PhotoboothIdentifier for topic is missing. Settings Timestamp: {Timestamp}", settingsToPublish.LastModifiedUtc);
             }
         }
 
