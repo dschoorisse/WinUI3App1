@@ -65,13 +65,19 @@ namespace WinUI3App
         {
             base.OnNavigatedTo(e);
 
+            App.State = App.PhotoBoothState.LoadingMainPage;
+
+            // Load UI texts
             LoadDynamicUITexts();
 
             // Load the background image
             await LoadBackgroundFromSettings();
+
+            App.State = App.PhotoBoothState.Idle;
         }
 
         // If you want to refresh the background when returning from settings page:
+        // we attach a handler when we leave the main page, only if we are going to the settings page
         protected override async void OnNavigatedFrom(NavigationEventArgs e)
         {
             base.OnNavigatedFrom(e);

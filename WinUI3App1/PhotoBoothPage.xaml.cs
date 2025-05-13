@@ -35,7 +35,7 @@ namespace WinUI3App
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
 
-            App.State = App.PhotoBoothState.LoadinPhotoBoothPage;
+            App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
 
             await LoadPageBackgroundAsync();
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
@@ -223,7 +223,7 @@ namespace WinUI3App
 
             foreach (var step in countdownSteps)
             {
-                App.Logger.Debug($"Countdown step: {step} of {countdownSteps}");
+                App.Logger.Debug($"Countdown step: {step} of {countdownSteps.Length}");
                 CountdownText.Text = step;
                 CountdownTextBackground.Opacity = 0;
 

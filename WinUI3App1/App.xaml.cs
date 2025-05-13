@@ -15,6 +15,7 @@ using Microsoft.UI.Xaml.Navigation;
 using System.Net.Http;
 using Windows.Storage;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -123,7 +124,8 @@ namespace WinUI3App1
                 {
                     CurrentPageName = initialPage.GetType().Name;
                 }
-                else // Fallback if Content is not yet a Page (less likely here)
+                // Fallback if Content is not yet a Page (less likely here)
+                else
                 {
                     CurrentPageName = mwInstance.AppFrame.SourcePageType?.Name ?? "MainPage";
                 }
@@ -132,7 +134,10 @@ namespace WinUI3App1
                 // Subscribe for subsequent navigations
                 mwInstance.AppFrame.Navigated += RootFrame_Navigated;
             }
-            else { Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events."); }
+            else 
+            { 
+                Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events."); 
+            }
 
             #region fullscreen or windowed
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
@@ -313,7 +318,18 @@ namespace WinUI3App1
                         timestamp = DateTime.UtcNow.ToString("o"),
                         cameraConnected = false, // Placeholder, replace with actual camera status
                     };
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject);
+
+                    // Add JsonSerializerOptions with Enum Converter
+                    // In order to send enum values as strings instead of integers.
+                    var serializerOptions = new System.Text.Json.JsonSerializerOptions
+                    {
+                        WriteIndented = true, // Optional: for readable JSON in MQTT
+                        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, // Keeps JSON clean
+                        Converters = { new JsonStringEnumConverter() } 
+                    };
+
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject, serializerOptions);
+
                     await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain: false);
                 }
                 catch (Exception ex)
@@ -721,8 +737,9 @@ namespace WinUI3App1
         public enum PhotoBoothState
         {
             Starting,
+            LoadingMainPage,
             Idle,
-            LoadinPhotoBoothPage,
+            LoadingPhotoBoothPage,
             ResettingPhotoBoothPage,
             ShowingInstructions,
             Countdown,
@@ -749,7 +766,6 @@ namespace WinUI3App1
                     Logger?.Information("App: Photobooth Operational State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
 
                     // Automatically publish the full status when this state changes
-                    // Fire-and-forget. cameraConnected is null here as it's a general state change. Retain is true.
                     _ = PublishPhotoBoothStatusJsonAsync();
                 }
             }
