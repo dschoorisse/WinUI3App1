@@ -30,9 +30,14 @@ namespace WinUI3App1
         public static string PhotoboothIdentifier { get; private set; }
         public static PhotoBoothSettings CurrentSettings { get; private set; } // Expose loaded settings
 
-        // Our new heartbeat timer
-        private static Timer _heartbeatTimer; 
-        private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10); // Configurable interval
+        // Heartbeat timer MQTT
+        private static Timer _heartbeatTimerMqtt; 
+        private static readonly TimeSpan HeartbeatIntervalMqtt = TimeSpan.FromSeconds(10); // Configurable interval
+
+        // Heartbeat timer text logging
+        private static Timer _heartbeatTimerLogging;
+        private static readonly TimeSpan HeartbeatIntervalLogging = TimeSpan.FromSeconds(300); // Configurable interval
+
 
         public App()
         {
@@ -185,23 +190,43 @@ namespace WinUI3App1
             // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
             SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
                        
-            #region Setup heartbeat timer
+            #region Setup heartbeat timers
+            // MQTT
             try
             {
-                // Start the timer. First heartbeat after 'HeartbeatInterval', then repeat at 'HeartbeatInterval'.
+                // Start the timer. First heartbeat after 'HeartbeatIntervalMqtt', then repeat at 'HeartbeatIntervalMqtt'.
                 // If you want an immediate first heartbeat for testing, set the dueTime to TimeSpan.Zero or a small value.
-                _heartbeatTimer = new Timer(
-                    callback: LogHeartbeat,
+                _heartbeatTimerMqtt = new Timer(
+                    callback: LogHeartbeatMqtt,
                     state: null,             // No state object needed for the callback
                     dueTime: TimeSpan.Zero,  // Time to wait before the first tick, immediately 
-                    period: HeartbeatInterval); // Interval between subsequent ticks
+                    period: HeartbeatIntervalMqtt); // Interval between subsequent ticks
 
-                Logger.Debug("Application Heartbeat logging timer started. Interval: {HeartbeatInterval}", HeartbeatInterval);
+                Logger.Verbose("Application MQTT Heartbeat logging timer started. Interval: {HeartbeatIntervalMqtt}", HeartbeatIntervalMqtt);
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
             }
+
+            // Text logs
+            try
+            {
+                // Start the timer. First heartbeat after 'HeartbeatIntervalMqtt', then repeat at 'HeartbeatIntervalMqtt'.
+                // If you want an immediate first heartbeat for testing, set the dueTime to TimeSpan.Zero or a small value.
+                _heartbeatTimerLogging = new Timer(
+                    callback: LogHeartbeatLogging,
+                    state: null,             // No state object needed for the callback
+                    dueTime: TimeSpan.Zero,  // Time to wait before the first tick, immediately 
+                    period: HeartbeatIntervalLogging); // Interval between subsequent ticks
+
+                Logger.Verbose("Application Logging Heartbeat logging timer started. Interval: {HeartbeatIntervalLogging}", HeartbeatIntervalLogging);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
+            }
+
             #endregion
         }
 
@@ -227,7 +252,7 @@ namespace WinUI3App1
                 // Using a generic "active" state; specific page actions might set more detailed states.
                 if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
                 {
-                    await TriggerStatusUpdate(appState: "PageChanged");
+                    await TriggerStatusUpdate(appState: "Idle");
                 }
             }
         }
@@ -245,12 +270,12 @@ namespace WinUI3App1
         {
             if (isConnected)
             {
-                Logger.Information("MQTT [{PhotoboothId}] Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
+                Logger.Information("MQTT: Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
                 await PublishStatusAsync("online", true); // Retain online status
             }
             else
             {
-                Logger.Information("MQTT [{PhotoboothId}] Disconnected.", PhotoboothIdentifier);
+                Logger.Information("MQTT: Disconnected.", PhotoboothIdentifier);
             }
         }
 
@@ -265,12 +290,12 @@ namespace WinUI3App1
                 }
                 catch (Exception ex)
                 {
-                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish status '{Status}' to topic '{Topic}'", PhotoboothIdentifier, statusPayload, topic);
+                    Logger?.Error(ex, "MQTT: Failed to publish status '{Status}' to topic '{Topic}'", PhotoboothIdentifier, statusPayload, topic);
                 }
             }
             else
             {
-                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish status '{Status}'", PhotoboothIdentifier, statusPayload);
+                Logger?.Warning("MQTT: Not connected. Cannot publish status '{Status}'", PhotoboothIdentifier, statusPayload);
             }
         }
 
@@ -294,12 +319,12 @@ namespace WinUI3App1
                 }
                 catch (Exception ex)
                 {
-                    Logger?.Error(ex, "MQTT [{PhotoboothId}] Failed to publish JSON status '{State}' to topic '{Topic}'", PhotoboothIdentifier, state, topic);
+                    Logger?.Error(ex, "MQTT: Failed to publish JSON status '{State}' to topic '{Topic}'", PhotoboothIdentifier, state, topic);
                 }
             }
             else
             {
-                Logger?.Warning("MQTT [{PhotoboothId}] Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier, state);
+                Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier, state);
             }
         }
 
@@ -359,17 +384,17 @@ namespace WinUI3App1
 
         private async void OnMainWindowClosed(object sender, WindowEventArgs args)
         {
-            Logger.Information("Main window closing for Photobooth ID: {PhotoboothId}. Disposing MQTT Service...", PhotoboothIdentifier);
+            Logger.Information("Main window closing. Disposing MQTT Service...", PhotoboothIdentifier);
 
             // --- Dispose Heartbeat Timer ---
-            if (_heartbeatTimer != null)
+            if (_heartbeatTimerMqtt != null)
             {
                 try
                 {
                     // Dispose the timer and wait for any queued callbacks to complete
                     // (or use Dispose(WaitHandle) for more control if needed, but simple Dispose is usually fine).
-                    _heartbeatTimer.Dispose();
-                    _heartbeatTimer = null; // Nullify to prevent reuse
+                    _heartbeatTimerMqtt.Dispose();
+                    _heartbeatTimerMqtt = null; // Nullify to prevent reuse
                     Logger.Information("Heartbeat timer disposed successfully.");
                 }
                 catch (Exception ex)
@@ -641,7 +666,40 @@ namespace WinUI3App1
         }
 
         // In App.xaml.cs (within the App class)
-        private async static void LogHeartbeat(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
+        private async static void LogHeartbeatMqtt(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
+        {
+            // Publish MQTT Heartbeat
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
+            {
+                string heartbeatTopic = $"photobooth/{PhotoboothIdentifier}/heartbeat";
+                // "o" format is the round-trip DateTime pattern (ISO 8601, includes Z for UTC)
+                string heartbeatPayload = DateTime.UtcNow.ToString("o");
+
+                try
+                {
+                    App.Logger?.Verbose("MQTT HEARTBEAT: Attempting to publish to {Topic} with payload {Payload}", heartbeatTopic, heartbeatPayload);
+
+                    await MqttServiceInstance.PublishAsync(
+                        topic: heartbeatTopic,
+                        payload: heartbeatPayload,
+                        qos: MqttQualityOfServiceLevel.AtMostOnce, // QoS 0 is usually sufficient for heartbeats
+                        retain: false);
+
+                }
+                catch (Exception ex)
+                {
+                    App.Logger?.Error(ex, "MQTT HEARTBEAT: Failed to publish heartbeat to {Topic}", heartbeatTopic);
+                }
+            }
+            else
+            {
+                // This log might be frequent if MQTT is often disconnected. Consider its verbosity.
+                App.Logger?.Debug("MQTT HEARTBEAT: Cannot publish. MQTT service not connected, instance not available, or PhotoboothIdentifier is missing.");
+            }
+
+        }
+
+        private async static void LogHeartbeatLogging(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
         {
             // 1. Log in text file
             // Ensure Logger is initialized and we have the necessary info.
@@ -659,37 +717,6 @@ namespace WinUI3App1
                 // This should be rare after proper startup.
                 System.Diagnostics.Debug.WriteLine($"HEARTBEAT (Debug fallback): App active. Page: {CurrentPageName}. Logger/Settings/ID might not be fully initialized.");
             }
-
-            // 2. Publish MQTT Heartbeat
-            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
-            {
-                string heartbeatTopic = $"photobooth/{PhotoboothIdentifier}/heartbeat";
-                // "o" format is the round-trip DateTime pattern (ISO 8601, includes Z for UTC)
-                string heartbeatPayload = DateTime.UtcNow.ToString("o");
-
-                try
-                {
-                    App.Logger?.Debug("MQTT HEARTBEAT: Attempting to publish to {Topic} with payload {Payload}", heartbeatTopic, heartbeatPayload);
-
-                    await MqttServiceInstance.PublishAsync(
-                        topic: heartbeatTopic,
-                        payload: heartbeatPayload,
-                        qos: MqttQualityOfServiceLevel.AtMostOnce, // QoS 0 is usually sufficient for heartbeats
-                        retain: false); // Heartbeats should NOT be retained messages
-
-                    App.Logger?.Debug("MQTT HEARTBEAT: Successfully published to {Topic}", heartbeatTopic);
-                }
-                catch (Exception ex)
-                {
-                    App.Logger?.Error(ex, "MQTT HEARTBEAT: Failed to publish heartbeat to {Topic}", heartbeatTopic);
-                }
-            }
-            else
-            {
-                // This log might be frequent if MQTT is often disconnected. Consider its verbosity.
-                App.Logger?.Debug("MQTT HEARTBEAT: Cannot publish. MQTT service not connected, instance not available, or PhotoboothIdentifier is missing.");
-            }
-
         }
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.

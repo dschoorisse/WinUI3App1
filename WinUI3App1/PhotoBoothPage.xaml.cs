@@ -36,6 +36,8 @@ namespace WinUI3App
 
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
+            await App.TriggerStatusUpdate(appState: "Idle");
+
             await LoadPageBackgroundAsync();
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
             ResetProcedure();

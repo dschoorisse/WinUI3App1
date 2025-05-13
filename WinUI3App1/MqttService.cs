@@ -67,11 +67,11 @@ namespace WinUI3App1
             if (!string.IsNullOrEmpty(username))
             {
                 builder = builder.WithCredentials(username, password);
-                _logger.Debug("MQTT [{PhotoboothId}]: Using username for authentication.", _photoboothId);
+                _logger.Debug("MQTT: Using username for authentication.", _photoboothId);
             }
             else
             {
-                _logger.Debug("MQTT [{PhotoboothId}]: Connecting without username/password.", _photoboothId);
+                _logger.Debug("MQTT: Connecting without username/password.", _photoboothId);
             }
 
             _mqttClientOptions = builder.Build(); // Bouw de opties na alle configuratie
@@ -95,7 +95,7 @@ namespace WinUI3App1
         {
             if (_isDisposed || cancellationToken.IsCancellationRequested || _mqttClient == null) return;
 
-            _logger.Debug("MQTT [{PhotoboothId}]: Attempting to connect...", _photoboothId); // Log met ID
+            _logger.Debug("MQTT: Attempting to connect...", _photoboothId); // Log met ID
             try
             {
                 if (_mqttClient.IsConnected) { /*...*/ return; }
@@ -104,13 +104,13 @@ namespace WinUI3App1
 
                 if (connectResult.ResultCode == MqttClientConnectResultCode.Success)
                 {
-                    _logger.Information("MQTT [{PhotoboothId}]: Successfully connected.", _photoboothId);
+                    _logger.Information("MQTT: Successfully connected.", _photoboothId);
                     _reconnectTimer?.Dispose();
                     _reconnectTimer = null;
                 }
                 else
                 {
-                    _logger.Error("MQTT [{PhotoboothId}]: Failed to connect. Reason: {Reason}", _photoboothId, connectResult.ReasonString ?? connectResult.ResultCode.ToString());
+                    _logger.Error("MQTT: Failed to connect. Reason: {Reason}", _photoboothId, connectResult.ReasonString ?? connectResult.ResultCode.ToString());
                     ScheduleReconnect(cancellationToken);
                 }
             }
@@ -145,7 +145,7 @@ namespace WinUI3App1
 
         private async Task HandleConnectedAsync(MqttClientConnectedEventArgs e)
         {
-            _logger.Debug("MQTT [{PhotoboothId}]: Connected event received.", _photoboothId);
+            _logger.Debug("MQTT: Connected event received.", _photoboothId);
             OnConnectionStatusChanged(true);
 
             // Subscribe to settings command update
@@ -166,7 +166,7 @@ namespace WinUI3App1
                 return; // Exit early if disposed
             }
 
-            _logger.Warning("MQTT [{PhotoboothId}]: Disconnected. Reason: {Reason}. ClientWasConnected: {ClientWasConnected}. Reconnecting...", _photoboothId, e.Reason, e.ClientWasConnected); 
+            _logger.Warning("MQTT: Disconnected. Reason: {Reason}. ClientWasConnected: {ClientWasConnected}. Reconnecting...", _photoboothId, e.Reason, e.ClientWasConnected); 
             OnConnectionStatusChanged(false);
 
             // Only attempt reconnect if disconnection was not initiated by Dispose or a clean disconnect command
@@ -193,13 +193,13 @@ namespace WinUI3App1
         private async Task HandleApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
         {
             // Log met ID
-            _logger.Information("MQTT [{PhotoboothId}]: Received on topic '{Topic}'. Payload: {Payload}", _photoboothId, e.ApplicationMessage.Topic, Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
+            _logger.Information("MQTT: Received on topic '{Topic}'. Payload: {Payload}", _photoboothId, e.ApplicationMessage.Topic, Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
                         string topic = e.ApplicationMessage.Topic;
             string payload = System.Text.Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
             if (topic == _remoteSettingsSetTopic)
             {
-                _logger.Debug("MQTT [{PhotoboothId}]: Received settings update on topic '{Topic}'.", _photoboothId, topic);
+                _logger.Debug("MQTT: Received settings update on topic '{Topic}'.", _photoboothId, topic);
                 await ProcessRemoteSettingsUpdateAsync(payload);
             }
 
@@ -215,43 +215,43 @@ namespace WinUI3App1
 
                 if (remoteSettings == null)
                 {
-                    _logger.Error("MQTT [{PhotoboothId}]: Failed to deserialize remote settings payload.", _photoboothId);
+                    _logger.Error("MQTT: Failed to deserialize remote settings payload.", _photoboothId);
                     return;
                 }
                 // Ensure remoteSettings has a valid timestamp; if not, could ignore or assign DateTime.MinValue
                 // but our model constructor should give it one if the JSON field was missing.
 
-                _logger.Debug("MQTT [{PhotoboothId}]: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
+                _logger.Debug("MQTT: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
 
                 PhotoBoothSettings localSettings = await SettingsManager.LoadSettingsAsync();
                 if (localSettings == null)
                 {
-                    _logger.Error("MQTT [{PhotoboothId}]: Critical - Failed to load local settings for comparison.", _photoboothId);
+                    _logger.Error("MQTT: Critical - Failed to load local settings for comparison.", _photoboothId);
                     return; // Or handle more gracefully
                 }
-                _logger.Debug("MQTT [{PhotoboothId}]: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
+                _logger.Debug("MQTT: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
 
 
                 if (remoteSettings.LastModifiedUtc > localSettings.LastModifiedUtc)
                 {
-                    _logger.Information("MQTT [{PhotoboothId}]: Remote settings are newer. Applying and saving.", _photoboothId);
+                    _logger.Information("MQTT: Remote settings are newer. Applying and saving.", _photoboothId);
                     await SettingsManager.SaveSettingsAsync(remoteSettings, true); // true to preserve remote timestamp
 
                     SettingsUpdatedRemotely?.Invoke(this, EventArgs.Empty); // Notify app
                 }
                 else
                 {
-                    _logger.Warning("MQTT [{PhotoboothId}]: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
+                    _logger.Warning("MQTT: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
                         _photoboothId, remoteSettings.LastModifiedUtc, localSettings.LastModifiedUtc);
                 }
             }
             catch (JsonException jsonEx)
             {
-                _logger.Error(jsonEx, "MQTT [{PhotoboothId}]: JSON Deserialization error for remote settings.", _photoboothId);
+                _logger.Error(jsonEx, "MQTT: JSON Deserialization error for remote settings.", _photoboothId);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "MQTT [{PhotoboothId}]: Error processing remote settings update.", _photoboothId);
+                _logger.Error(ex, "MQTT: Error processing remote settings update.", _photoboothId);
             }
         }
 
@@ -275,7 +275,7 @@ namespace WinUI3App1
                 var result = await _mqttClient.PublishAsync(applicationMessage, _cancellationTokenSource.Token);
                 if (result.ReasonCode == MqttClientPublishReasonCode.Success)
                 {
-                    _logger.Debug("MQTT: Message published successfully to topic '{Topic}'.", topic);
+                    _logger.Verbose("MQTT: Message published successfully to topic '{Topic}'.", topic);
                 }
                 else
                 {
@@ -349,7 +349,7 @@ namespace WinUI3App1
 
             if (_reconnectTimer == null)
             {
-                _logger.Information("MQTT [{PhotoboothId}]: Scheduling reconnect.", _photoboothId);
+                _logger.Information("MQTT: Scheduling reconnect.", _photoboothId);
                 // Use the internal cancellation token for the timer callback
                 _reconnectTimer = new Timer(async _ =>
                 {
@@ -379,11 +379,11 @@ namespace WinUI3App1
 
                 if (!isConnected)
                 {
-                    _logger.Error("MQTT [{PhotoboothId}]: Connection status changed: {IsConnected}", _photoboothId, isConnected);
+                    _logger.Error("MQTT: Connection status changed: {IsConnected}", _photoboothId, isConnected);
                 }
                 else
                 {
-                    _logger.Debug("MQTT [{PhotoboothId}]: Connection status changed: {IsConnected}", _photoboothId, isConnected);
+                    _logger.Debug("MQTT: Connection status changed: {IsConnected}", _photoboothId, isConnected);
 
                 }
             }
@@ -393,7 +393,7 @@ namespace WinUI3App1
         {
             if (_isDisposed) return;
             _isDisposed = true; // Zet flag vroeg
-            _logger.Information("MQTT [{PhotoboothId}]: Service disposing...", _photoboothId);
+            _logger.Information("MQTT: Service disposing...", _photoboothId);
 
             // Annuleer lopende operaties (zoals reconnect pogingen)
             if (!_cancellationTokenSource.IsCancellationRequested)
@@ -417,7 +417,7 @@ namespace WinUI3App1
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warning(ex, "MQTT [{PhotoboothId}]: Exception during event unsubscribe.", _photoboothId);
+                    _logger.Warning(ex, "MQTT: Exception during event unsubscribe.", _photoboothId);
                 }
 
 
@@ -438,18 +438,18 @@ namespace WinUI3App1
                             .WithRetainFlag(true) // Behoud de offline status
                             .Build();
 
-                        _logger.Information("MQTT [{PhotoboothId}]: Publishing explicit '{Payload}' status before disconnecting...", _photoboothId, offlinePayload);
+                        _logger.Information("MQTT: Publishing explicit '{Payload}' status before disconnecting...", _photoboothId, offlinePayload);
                         // Probeer te publiceren met een korte timeout
                         using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)); // 2 seconden timeout
                         var pubResult = await _mqttClient.PublishAsync(offlineMessage, pubCts.Token);
                         if (pubResult.ReasonCode == MqttClientPublishReasonCode.Success)
                         {
-                            _logger.Debug("MQTT [{PhotoboothId}]: Explicit '{Payload}' status published successfully.", _photoboothId, offlinePayload);
+                            _logger.Debug("MQTT: Explicit '{Payload}' status published successfully.", _photoboothId, offlinePayload);
                         }
                         else
                         {
                             // Log als waarschuwing, we gaan toch door met disconnecten
-                            _logger.Warning("MQTT [{PhotoboothId}]: Failed to publish explicit '{Payload}' status. Reason: {Reason}", _photoboothId, offlinePayload, pubResult.ReasonCode);
+                            _logger.Warning("MQTT: Failed to publish explicit '{Payload}' status. Reason: {Reason}", _photoboothId, offlinePayload, pubResult.ReasonCode);
                         }
 
                         // Geef het bericht een klein momentje om te verzenden
@@ -458,48 +458,48 @@ namespace WinUI3App1
                         // --------------------------------------------------
 
                         // --- VOER NU PAS DE NETTE DISCONNECT UIT ---
-                        _logger.Information("MQTT [{PhotoboothId}]: Performing clean disconnect...", _photoboothId);
+                        _logger.Information("MQTT: Performing clean disconnect...", _photoboothId);
                         var disconnectOptions = _mqttFactory.CreateClientDisconnectOptionsBuilder()
                            .WithReason(MqttClientDisconnectOptionsReason.NormalDisconnection)
                            .Build();
                         // Gebruik een aparte CancellationToken voor de disconnect zelf
                         using var discCts = new CancellationTokenSource(TimeSpan.FromSeconds(3)); // 3 seconden timeout
                         await _mqttClient.DisconnectAsync(disconnectOptions, discCts.Token);
-                        _logger.Information("MQTT [{PhotoboothId}]: Cleanly disconnected.", _photoboothId);
+                        _logger.Information("MQTT: Cleanly disconnected.", _photoboothId);
                         // -----------------------------------------
                     }
                     catch (OperationCanceledException ex)
                     {
                         // Dit kan gebeuren als de publish of disconnect timeout
-                        _logger.Warning(ex, "MQTT [{PhotoboothId}]: Final publish or disconnect operation timed out or was cancelled during dispose.", _photoboothId);
+                        _logger.Warning(ex, "MQTT: Final publish or disconnect operation timed out or was cancelled during dispose.", _photoboothId);
                     }
                     catch (Exception ex)
                     {
                         // Log de fout, maar ga door met disposen
-                        _logger.Error(ex, "MQTT [{PhotoboothId}]: Error during final publish or disconnect on dispose.", _photoboothId);
+                        _logger.Error(ex, "MQTT: Error during final publish or disconnect on dispose.", _photoboothId);
                     }
                 }
                 else
                 {
                     // Log dat we niet verbonden waren, dus ook niet publiceren/disconnecten
-                    _logger.Information("MQTT [{PhotoboothId}]: Client was not connected during dispose, skipping final publish/disconnect.", _photoboothId);
+                    _logger.Information("MQTT: Client was not connected during dispose, skipping final publish/disconnect.", _photoboothId);
                 }
 
                 // Dispose de client zelf, ongeacht of disconnect lukte
-                try { _mqttClient.Dispose(); } catch (Exception ex) { _logger.Warning(ex, "MQTT [{PhotoboothId}]: Exception during MqttClient dispose.", _photoboothId); }
+                try { _mqttClient.Dispose(); } catch (Exception ex) { _logger.Warning(ex, "MQTT: Exception during MqttClient dispose.", _photoboothId); }
                 _mqttClient = null; // Goede praktijk om referentie te nullen na dispose
             }
             else
             {
-                _logger.Information("MQTT [{PhotoboothId}]: MQTT client was already null during dispose.", _photoboothId);
+                _logger.Information("MQTT: MQTT client was already null during dispose.", _photoboothId);
             }
 
 
             // Dispose de cancellation token source
-            try { _cancellationTokenSource.Dispose(); } catch (Exception ex) { _logger.Warning(ex, "MQTT [{PhotoboothId}]: Exception during CancellationTokenSource dispose.", _photoboothId); }
+            try { _cancellationTokenSource.Dispose(); } catch (Exception ex) { _logger.Warning(ex, "MQTT: Exception during CancellationTokenSource dispose.", _photoboothId); }
 
 
-            _logger.Information("MQTT [{PhotoboothId}]: Service disposed.", _photoboothId);
+            _logger.Information("MQTT: Service disposed.", _photoboothId);
         }
 
         // Standard Dispose pattern implementation
