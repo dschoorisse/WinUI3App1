@@ -67,21 +67,21 @@ namespace WinUI3App1
             if (!string.IsNullOrEmpty(username))
             {
                 builder = builder.WithCredentials(username, password);
-                _logger.Information("MQTT [{PhotoboothId}]: Using username for authentication.", _photoboothId);
+                _logger.Debug("MQTT [{PhotoboothId}]: Using username for authentication.", _photoboothId);
             }
             else
             {
-                _logger.Information("MQTT [{PhotoboothId}]: Connecting without username/password.", _photoboothId);
+                _logger.Debug("MQTT [{PhotoboothId}]: Connecting without username/password.", _photoboothId);
             }
 
             _mqttClientOptions = builder.Build(); // Bouw de opties na alle configuratie
-            _logger.Information("MQTT [{PhotoboothId}] Service initialized for broker {BrokerAddress}:{Port} with LWT on topic '{LwtTopic}'",
+            _logger.Debug("MQTT [{PhotoboothId}] Service initialized for broker {BrokerAddress}:{Port} with LWT on topic '{LwtTopic}'",
                _photoboothId, brokerAddress, port, lastWillTopic);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
-            _logger.Information("MQTT Service starting...");
+            _logger.Debug("MQTT Service starting...");
             _mqttClient = _mqttFactory.CreateMqttClient();
 
             _mqttClient.ConnectedAsync += HandleConnectedAsync;
@@ -145,11 +145,11 @@ namespace WinUI3App1
 
         private async Task HandleConnectedAsync(MqttClientConnectedEventArgs e)
         {
-            _logger.Information("MQTT [{PhotoboothId}]: Connected event received.", _photoboothId);
+            _logger.Debug("MQTT [{PhotoboothId}]: Connected event received.", _photoboothId);
             OnConnectionStatusChanged(true);
 
             // Subscribe to settings command update
-            _logger.Information($"Subscribing to {_remoteSettingsSetTopic}");
+            _logger.Debug($"Subscribing to {_remoteSettingsSetTopic}");
             await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(_remoteSettingsSetTopic).Build());
 
             // Example: Subscribe to a topic specific to this booth
@@ -199,7 +199,7 @@ namespace WinUI3App1
 
             if (topic == _remoteSettingsSetTopic)
             {
-                _logger.Information("MQTT [{PhotoboothId}]: Received settings update on topic '{Topic}'.", _photoboothId, topic);
+                _logger.Debug("MQTT [{PhotoboothId}]: Received settings update on topic '{Topic}'.", _photoboothId, topic);
                 await ProcessRemoteSettingsUpdateAsync(payload);
             }
 
@@ -221,7 +221,7 @@ namespace WinUI3App1
                 // Ensure remoteSettings has a valid timestamp; if not, could ignore or assign DateTime.MinValue
                 // but our model constructor should give it one if the JSON field was missing.
 
-                _logger.Information("MQTT [{PhotoboothId}]: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
+                _logger.Debug("MQTT [{PhotoboothId}]: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
 
                 PhotoBoothSettings localSettings = await SettingsManager.LoadSettingsAsync();
                 if (localSettings == null)
@@ -229,7 +229,7 @@ namespace WinUI3App1
                     _logger.Error("MQTT [{PhotoboothId}]: Critical - Failed to load local settings for comparison.", _photoboothId);
                     return; // Or handle more gracefully
                 }
-                _logger.Information("MQTT [{PhotoboothId}]: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
+                _logger.Debug("MQTT [{PhotoboothId}]: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
 
 
                 if (remoteSettings.LastModifiedUtc > localSettings.LastModifiedUtc)
@@ -241,7 +241,7 @@ namespace WinUI3App1
                 }
                 else
                 {
-                    _logger.Information("MQTT [{PhotoboothId}]: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
+                    _logger.Warning("MQTT [{PhotoboothId}]: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
                         _photoboothId, remoteSettings.LastModifiedUtc, localSettings.LastModifiedUtc);
                 }
             }
@@ -275,7 +275,7 @@ namespace WinUI3App1
                 var result = await _mqttClient.PublishAsync(applicationMessage, _cancellationTokenSource.Token);
                 if (result.ReasonCode == MqttClientPublishReasonCode.Success)
                 {
-                    _logger.Information("MQTT: Message published successfully to topic '{Topic}'.", topic);
+                    _logger.Debug("MQTT: Message published successfully to topic '{Topic}'.", topic);
                 }
                 else
                 {
@@ -435,7 +435,7 @@ namespace WinUI3App1
                         var pubResult = await _mqttClient.PublishAsync(offlineMessage, pubCts.Token);
                         if (pubResult.ReasonCode == MqttClientPublishReasonCode.Success)
                         {
-                            _logger.Information("MQTT [{PhotoboothId}]: Explicit '{Payload}' status published successfully.", _photoboothId, offlinePayload);
+                            _logger.Debug("MQTT [{PhotoboothId}]: Explicit '{Payload}' status published successfully.", _photoboothId, offlinePayload);
                         }
                         else
                         {

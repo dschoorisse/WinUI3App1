@@ -16,7 +16,6 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string LastSuccessfullyDownloadedImageUrl { get; set; } = ""; // To track if current local image matches the remote URL
         public string LastSuccessfullyDownloadedImageHash { get; set; } = "";// To track if current local image matches the remote hash
 
-
         // Guest-Facing UI Texts for Main Page
         public string UiMainPageTitleText { get; set; } = "Welcome!";
         public string UiMainPageSubtitleText { get; set; } = "Capture your perfect moment.";

@@ -140,7 +140,6 @@ namespace WinUI3App1 // Ensure this namespace matches your project
                 var options = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
                 string json = JsonSerializer.Serialize(settings, options);
                 await File.WriteAllTextAsync(FilePath, json);
-                App.Logger?.Debug($"SettingsManager: Settings saved successfully to {FilePath}");
                 App.Logger?.Information("SettingsManager: Settings saved to {FilePath}. Effective Timestamp: {Timestamp}", FilePath, settings.LastModifiedUtc);
 
                 // Trigger event that settings have been written (for reporting current state)

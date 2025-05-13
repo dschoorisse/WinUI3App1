@@ -111,7 +111,7 @@ namespace WinUI3App
                 return;
             }
 
-            App.Logger?.Information("MainPage: Loading dynamic UI texts from settings.");
+            App.Logger?.Debug("MainPage: Loading dynamic UI texts from settings.");
 
             // Load Title Text (assuming TextBlock x:Name="TitleTextBlock" in your XAML)
             if (this.FindName("TitleTextBlock") is TextBlock titleTextBlock)
@@ -171,13 +171,13 @@ namespace WinUI3App
                     }
                     // Use locally loaded 'settings' for this method if App.CurrentSettings was null
                     string backgroundImagePath = settings.BackgroundImagePath;
-                    App.Logger?.Information("MainPage attempting to load background image from: {Path}", backgroundImagePath);
+                    App.Logger?.Debug("MainPage attempting to load background image from: {Path}", backgroundImagePath);
                     // ... rest of your loading logic using backgroundImagePath ...
                 }
                 else
                 {
                     string backgroundImagePath = App.CurrentSettings.BackgroundImagePath;
-                    App.Logger?.Information("MainPage attempting to load background image from App.CurrentSettings: {Path}", backgroundImagePath);
+                    App.Logger?.Debug("MainPage attempting to load background image from App.CurrentSettings: {Path}", backgroundImagePath);
                     // ... (your existing logic to load image from backgroundImagePath) ...
                     if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
                     {
@@ -210,21 +210,9 @@ namespace WinUI3App
             }
         }
 
-        private void AddLog(string message)
-        {
-            var logEntry = new LogEntry
-            {
-                Timestamp = DateTime.Now,
-                Message = message
-            };
-
-            _logs.Add(logEntry);
-            Debug.WriteLine($"{logEntry.Timestamp.ToString("HH:mm:ss.fff")}: {logEntry.Message}");
-        }
-
         private void HandleCornerTouch(string cornerName)
         {
-            AddLog($"Corner touched: {cornerName}");
+            App.Logger?.Debug($"Corner touched: {cornerName}");
 
             // Add this touch to the collection
             _cornerTouches.Add(new CornerTouch
@@ -239,13 +227,17 @@ namespace WinUI3App
 
         private void CheckSecretPattern()
         {
+            App.Logger?.Debug("Checking secret pattern");
+
             // Remove old touches outside the time window
             DateTime cutoffTime = DateTime.Now.AddMilliseconds(-SecretPatternTimeWindow);
-
+            
             for (int i = _cornerTouches.Count - 1; i >= 0; i--)
             {
                 if (_cornerTouches[i].TouchTime < cutoffTime)
                 {
+
+                    App.Logger?.Debug($"Removing previous corner touch of {_cornerTouches[i].CornerName} at {_cornerTouches[i].TouchTime}");
                     _cornerTouches.RemoveAt(i);
                 }
             }
@@ -269,7 +261,7 @@ namespace WinUI3App
 
             if (topLeftTouched && topRightTouched && bottomLeftTouched && bottomRightTouched)
             {
-                AddLog("Secret pattern detected! Opening admin panel.");
+                App.Logger?.Information("Secret pattern detected! Opening admin panel.");
 
                 OpenSetttingsPage();
                 _cornerTouches.Clear();

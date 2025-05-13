@@ -5,16 +5,16 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Windowing; // Required for AppWindow and AppWindowPresenterKind
 using WinRT.Interop;          // Required for WindowNative and Win32Interop
 using Serilog;
+using Serilog.Formatting.Compact;
 using MQTTnet.Protocol;
 using Microsoft.UI;
-using Serilog.Events;
 using WinUI3App;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Dispatching;
 using System.Net.Http;
 using Windows.Storage;
 using System.Security.Cryptography;
+using Serilog.Events;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -35,7 +35,6 @@ namespace WinUI3App1
         public App()
         {
             this.InitializeComponent();
-            ConfigureLogging(); // Logger should be configured first
 
             // Settings-dependent initializations are moved to OnLaunched after settings are loaded
             // to allow for async loading of settings.
@@ -93,7 +92,7 @@ namespace WinUI3App1
                     MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
                     MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
                     MqttServiceInstance.SettingsUpdatedRemotely += OnRemoteSettingsUpdated;
-                    Logger.Information("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
+                    Logger.Debug("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
                 }
                 else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
             }
@@ -101,9 +100,9 @@ namespace WinUI3App1
 
             // 5. Main window creation and Fullscreen Logic ---
             MainWindow = new MainWindow();
-            Logger.Information("Main window created");
+            Logger.Debug("Main window created");
 
-            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name
+            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name, TODO: create list and populoate from JSON
             string currentComputerName = Environment.MachineName;
             Logger.Information("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
 
@@ -119,7 +118,7 @@ namespace WinUI3App1
                 {
                     CurrentPageName = mwInstance.AppFrame.SourcePageType?.Name ?? "MainPage";
                 }
-                Logger.Information("App: Initial page detected: {CurrentPageName}", CurrentPageName);
+                Logger.Debug("App: Initial page detected: {CurrentPageName}", CurrentPageName);
 
                 // Subscribe for subsequent navigations
                 mwInstance.AppFrame.Navigated += RootFrame_Navigated;
@@ -143,13 +142,21 @@ namespace WinUI3App1
                             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
                             Logger.Information("Fullscreen mode has been set.");
                         }
-                        // ... (other presenter kind checks as before) ...
-                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen) Logger.Information("Window is already in Fullscreen mode.");
-                        else Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied.", appWindow.Presenter.Kind);
+                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
+                        {
+                            Logger.Information("Window is already in Fullscreen mode.");
+                        }
+                        else
+                        {
+                            Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied.", appWindow.Presenter.Kind);
+                        }
                     }
                     else Logger.Error("Could not retrieve AppWindow. Fullscreen mode cannot be set.");
                 }
-                catch (Exception ex) { Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); }
+                catch (Exception ex) 
+                { 
+                    Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); 
+                }
             }
             else Logger.Information("Computer name does not match. Application will start in default windowed mode.");
             #endregion
@@ -294,25 +301,48 @@ namespace WinUI3App1
 
         private void ConfigureLogging()
         {
-            string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+            string localAppDataPath;
+            try
+            {
+                // This is the standard and preferred way
+                localAppDataPath = ApplicationData.Current.LocalFolder.Path;
+            }
+            catch (Exception ex) // InvalidOperationException can occur if LocalFolder is not accessible (e.g., certain contexts for unpackaged apps very early)
+            {
+                App.Logger?.Error(ex, "ConfigureLogging: Could not access ApplicationData.Current.LocalFolder.Path. Falling back to AppContext.BaseDirectory for logs path.");
+                // Fallback path, be mindful of write permissions if app is installed in Program Files
+                localAppDataPath = AppContext.BaseDirectory;
+            }
+
+            string logsDirectory = Path.Combine(localAppDataPath, "Logs"); // New base path
+
             if (!Directory.Exists(logsDirectory)) Directory.CreateDirectory(logsDirectory);
 
             var loggerConfiguration = new LoggerConfiguration()
                 .MinimumLevel.Debug() // Overall minimum level for logs processed by Serilog
-                .Enrich.FromLogContext() // Allows adding contextual information to logs
-                .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier) // Add PhotoboothID to all log events
-                .Enrich.WithProperty("Application", "PhotoBoothApp") // Example static enrichment
-                .WriteTo.File(
-                    path: Path.Combine(logsDirectory, "photobooth-log-.txt"),
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier ?? "UnknownID_AtLoggingConfig") // Use PhotoboothIdentifier if available
+                .Enrich.WithProperty("Application", "PhotoBoothApp");
+
+            // --- File Sink with Compact JSON Format ---
+            try
+            {
+                loggerConfiguration.WriteTo.File(
+                    formatter: new RenderedCompactJsonFormatter(), // Use the compact JSON formatter
+                    path: Path.Combine(logsDirectory, "photobooth-log-.ndjson"), // Suggest .ndjson or .json.log extension
                     rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 7, // Example: Keep 7 days of logs
-                                               // Using a more detailed output template for file logs
-                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] ({SourceContext}) ID:{PhotoboothID} {Message:lj}{NewLine}{Exception}")
-                .WriteTo.Debug(); // Standard debug output           
+                    retainedFileCountLimit: 7);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ERROR: Failed to configure File sink: {ex.Message}");
+            }
+
+            // --- Debug Sink (remains the same) ---
+            loggerConfiguration.WriteTo.Debug(); // Standard Visual Studio debug output (usually text-based)
 
             Logger = loggerConfiguration.CreateLogger();
-            Log.Logger = Logger; // Assign to Serilog's global static logger for convenience
-                                 // (some libraries or parts of your code might use Log.Information directly)
+            Log.Logger = Logger; // Assign to Serilog's global static logger
         }
 
         private async void OnMainWindowClosed(object sender, WindowEventArgs args)
@@ -412,22 +442,22 @@ namespace WinUI3App1
                 {
                     MainWindow.DispatcherQueue.TryEnqueue(async () =>
                     {
-                        App.Logger?.Information("App: Now on UI thread. Attempting to refresh active page UI.");
+                        App.Logger?.Debug("App: Now on UI thread. Attempting to refresh active page UI.");
                         try
                         {
                             if (MainWindow.Content is Frame rootFrame) // Ensure 'Frame' is Microsoft.UI.Xaml.Controls.Frame
                             {
                                 if (rootFrame.Content is MainPage mainPageInstance)
                                 {
-                                    App.Logger?.Information("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
+                                    App.Logger?.Debug("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
                                     // These methods in MainPage.xaml.cs must be public
                                     mainPageInstance.LoadDynamicUITexts();
                                     await mainPageInstance.LoadBackgroundFromSettings();
-                                    App.Logger?.Information("App: MainPage UI refresh calls completed.");
+                                    App.Logger?.Debug("App: MainPage UI refresh calls completed.");
                                 }
                                 else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
                                 {
-                                    App.Logger?.Information("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
+                                    App.Logger?.Debug("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
                                     // PhotoBoothPage loads its texts/settings in its Page_Loaded or StartPhotoProcedure.
                                     // If it needs to react to live changes while already active (e.g., for button texts if review screen is shown),
                                     // it would need a public method like RefreshConfigurableTexts().
@@ -503,7 +533,7 @@ namespace WinUI3App1
                         App.Logger?.Debug("DownloadAndSaveImageAsync: No hash provided, skipping verification for {ImageUrl}", imageUrl);
                     }
 
-                        StorageFolder localCacheFolder = ApplicationData.Current.LocalCacheFolder; // Or LocalFolder
+                    StorageFolder localCacheFolder = ApplicationData.Current.LocalFolder;
                     StorageFolder backgroundsFolder = await localCacheFolder.CreateFolderAsync("Backgrounds", CreationCollisionOption.OpenIfExists);
 
                     // Create a somewhat unique local filename to avoid conflicts if URL changes often,
@@ -517,7 +547,7 @@ namespace WinUI3App1
 
                     StorageFile imageFile = await backgroundsFolder.CreateFileAsync(localFileName, CreationCollisionOption.ReplaceExisting);
                     await FileIO.WriteBytesAsync(imageFile, imageBytes);
-                    App.Logger?.Information("DownloadAndSaveImageAsync: Image saved locally to {LocalPath}", imageFile.Path);
+                    App.Logger?.Debug("DownloadAndSaveImageAsync: Image saved locally to {LocalPath}", imageFile.Path);
                     return imageFile.Path; // Return the local path
                 }
             }
