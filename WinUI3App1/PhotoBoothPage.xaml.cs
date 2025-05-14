@@ -22,15 +22,22 @@ namespace WinUI3App
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>();
         private const string PLACEHOLDER_IMAGE_PATH = "ms-appx:///Assets/placeholder.jpg";
+        
+        // Color of the dots
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
         private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
         private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
+        
+        private DispatcherTimer _reviewPageTimeoutTimer;
 
         public PhotoBoothPage()
         {
             this.InitializeComponent();
             this.Loaded += PhotoBoothPage_Loaded;
 
+            // Initialize the timer but don't start it yet
+            _reviewPageTimeoutTimer = new DispatcherTimer();
+            _reviewPageTimeoutTimer.Tick += ReviewPageTimeoutTimer_Tick;
         }
 
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
@@ -38,6 +45,21 @@ namespace WinUI3App
             await LoadPageBackgroundAsync();
 
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
+
+            #region Review timeout timer
+            // Set timer interval based on loaded settings
+            if (App.CurrentSettings != null)
+            {
+                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(App.CurrentSettings.ReviewPageTimeoutSeconds > 0 ? App.CurrentSettings.ReviewPageTimeoutSeconds : 30); // Use default if setting is invalid
+                App.Logger?.Debug("PhotoBoothPage: Review page timeout set to {Timeout} seconds.", _reviewPageTimeoutTimer.Interval.TotalSeconds);
+            }
+            else
+            {
+                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(30); // Fallback default
+                App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null, review page timeout defaulted to 30 seconds.");
+            }
+            #endregion
+
             await StartPhotoProcedure();
         }
 
@@ -98,7 +120,7 @@ namespace WinUI3App
             {
                 pageBackgroundImageControl.Source = App.PreloadedBackgroundImage;
                 if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Visible;
-                App.Logger?.Information("{PageName}: Applied preloaded background image.", this.GetType().Name);
+                App.Logger?.Debug("{PageName}: Applied preloaded background image.", this.GetType().Name);
             }
             else
             {
@@ -381,7 +403,7 @@ namespace WinUI3App
             App.Logger.Debug("TakePhotoSimulation: 'Hide photo' animation complete.");
 
             // Proceed to the next step in the photo capture sequence (either another countdown or the review screen)
-            App.Logger.Information("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
+            App.Logger.Debug("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
             await StartNextPhotoCapture();
             App.Logger.Debug("TakePhotoSimulation: Method finished.");
         }
@@ -419,11 +441,18 @@ namespace WinUI3App
             reviewSb.Children.Add(galleryFadeIn); reviewSb.Children.Add(buttonsFadeIn);
             reviewSb.Begin();
 
+            // Start the inactivity timer
+            _reviewPageTimeoutTimer.Start();
+
             await Task.CompletedTask;
         }
 
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
         {
+            // Review timer is stopped when the user interacts with the accept button
+            _reviewPageTimeoutTimer.Stop(); 
+            App.Logger?.Debug("PhotoBoothPage: Accept button clicked, review timeout timer stopped.");
+
             // Handle the accept button click event
             App.Logger.Information("Accept button clicked. Current state: {App.State}");
 
@@ -435,29 +464,91 @@ namespace WinUI3App
             // Proceed to save the photos
             App.State = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
-            PhotoGallery.Visibility = Visibility.Collapsed; ActionButtonsPanel.Visibility = Visibility.Collapsed;
-
+            PhotoGallery.Visibility = Visibility.Collapsed; 
+            ActionButtonsPanel.Visibility = Visibility.Collapsed;
             OverlayGrid.Visibility = Visibility.Visible;
             OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving..."; // Use from settings
 
             // Simulate saving process 
             await Task.Delay(1000);
-
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!"; // Use from settings
             await Task.Delay(1500);
-
             OverlayGrid.Visibility = Visibility.Collapsed;
             App.State = App.PhotoBoothState.Finished;
-            if (this.Frame != null && this.Frame.CanGoBack) { this.Frame.GoBack(); }
+
+            // Return to the MainPage
+            NavigateBackToMainPage("Accepted");
         }
 
         private async void RetakeButton_Click(object sender, RoutedEventArgs e)
         {
+            // Review timer is stopped when the user interacts with the retake button
+            _reviewPageTimeoutTimer.Stop();
+            App.Logger?.Debug("PhotoBoothPage: Retake button clicked, review timeout timer stopped.");
+
             if (App.State != App.PhotoBoothState.ReviewingPhotos && App.State != App.PhotoBoothState.Finished)
             {
                 return;
             }
             await StartPhotoProcedure();
         }
+
+        // Timer tick event handler
+        private void ReviewPageTimeoutTimer_Tick(object sender, object e)
+        {
+            _reviewPageTimeoutTimer.Stop(); // Stop the timer
+            App.Logger?.Debug("PhotoBoothPage: Review page inactivity timeout reached. Navigating back to MainPage.");
+
+            // Navigate back to MainPage
+            // Ensure App.State is reset or indicates returning to idle from timeout
+            App.State = App.PhotoBoothState.ReviewingPhotosTimedOut; // Or a specific "TimedOut" state if you want to track it
+
+            // Call the method to navigate back to MainPage
+            NavigateBackToMainPage("Timeout"); // Call the extracted method
+        }
+
+        private void NavigateBackToMainPage(string reason)
+        {
+            App.Logger?.Information("PhotoBoothPage: Navigating back to MainPage. Reason: {Reason}", reason);
+
+            // Ensure App.State reflects that the photobooth process is no longer active or is finishing.
+            // If finishing normally (Accept), it's already set to Finished.
+            // If timing out, we might set it to Idle or a specific TimedOut state.
+            if (reason.Contains("Timeout")) // Check if reason indicates a timeout
+            {
+                App.State = App.PhotoBoothState.Idle; // Or App.PhotoBoothState.ReviewingPhotosTimedOut if you add that state
+            }
+            // If called after "Accept", App.State would have been set to Finished already.
+
+            // Attempt to find the root frame and navigate
+            Frame rootFrame = null;
+            if (App.MainWindow.Content is Frame appRootFrame)
+            {
+                rootFrame = appRootFrame;
+            }
+            else if (this.Frame != null) // Fallback to this page's frame
+            {
+                rootFrame = this.Frame;
+            }
+
+            if (rootFrame != null)
+            {
+                if (rootFrame.CanGoBack)
+                {
+                    App.Logger?.Debug("PhotoBoothPage: Navigating back using rootFrame.GoBack().");
+                    rootFrame.GoBack();
+                }
+                else
+                {
+                    App.Logger?.Debug("PhotoBoothPage: rootFrame cannot GoBack(), navigating directly to MainPage type.");
+                    rootFrame.Navigate(typeof(MainPage)); // Navigate to MainPage type, clears backstack for this frame
+                }
+            }
+            else
+            {
+                App.Logger?.Error("PhotoBoothPage: Could not find a suitable Frame to navigate back to MainPage.");
+            }
+        }
+
     }
 }

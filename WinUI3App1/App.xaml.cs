@@ -779,6 +779,7 @@ namespace WinUI3App1
             RecordingVideo,
             ShowingSinglePhoto,
             ReviewingPhotos,
+            ReviewingPhotosTimedOut,
             Saving, 
             Processing,
             Uploading,
@@ -794,7 +795,7 @@ namespace WinUI3App1
                 {
                     string oldStateForLog = _state.ToString();
                     _state = value;
-                    Logger?.Information("App: Photobooth Operational State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
+                    Logger?.Information("App: State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
 
                     // Automatically publish the full status when this state changes
                     _ = PublishPhotoBoothStatusJsonAsync();

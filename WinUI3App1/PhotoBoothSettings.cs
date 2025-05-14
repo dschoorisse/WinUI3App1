@@ -16,7 +16,6 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string LastSuccessfullyDownloadedImageUrl { get; set; } = ""; // To track if current local image matches the remote URL
         public string LastSuccessfullyDownloadedImageHash { get; set; } = "";// To track if current local image matches the remote hash
 
-
         // Guest-Facing UI Texts for Main Page
         public string UiMainPageTitleText { get; set; } = "Welcome!";
         public string UiMainPageSubtitleText { get; set; } = "Capture your perfect moment.";
@@ -38,6 +37,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         // Adding x:Name to the TextBlocks inside the buttons is one way.
         public string UiButtonAcceptText { get; set; } = "OK";
         public string UiButtonRetakeText { get; set; } = "Retake";
+        public int ReviewPageTimeoutSeconds { get; set; } = 30; // Default to 30 seconds
 
         // UI/Look and Feel (from SettingsPage)
         public string BackgroundImagePath { get; set; } = ""; // Example: "Assets/default_background.jpg" or leave empty
@@ -72,7 +72,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public int MaxVideoDurationSeconds { get; set; } = 15;
         public string LogLevel { get; set; } = "Information"; // For Serilog or other loggers
         public bool EnableRemoteAdminViaMqtt { get; set; } = false;
-        public List<string> AdminUsernames { get; set; } = new List<string> { "admin" }; // Example for local admin access
+        public List<string> KioskComputerNames { get; set; } = new List<string> { "" }; // Example for local admin access
 
         // Constructor can be used to initialize complex defaults if needed
         public PhotoBoothSettings()

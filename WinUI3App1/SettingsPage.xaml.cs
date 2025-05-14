@@ -55,9 +55,9 @@ namespace WinUI3App1
         public SettingsPage()
         {
             this.InitializeComponent();
-            // Assuming IntToPercentConverter is defined elsewhere or in XAML resources
-            // If it's defined in C# within this file, ensure it's correctly placed.
-            // If not already in XAML resources: Resources.Add("IntToPercentConverter", new IntToPercentConverter());
+
+            // Register convertor
+            Resources.Add("IntToPercentConverter", new IntToPercentConverter());
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -478,8 +478,5 @@ namespace WinUI3App1
             // PrinterSelectionComboBox.ItemsSource = _availablePrinters; // Set in InitializeControls
         }
 
-    } // End of SettingsPage class
-
-    // Ensure IntToPercentConverter is correctly defined, possibly in its own file or here if simple enough
-    // public class IntToPercentConverter : Microsoft.UI.Xaml.Data.IValueConverter { /* ... (as defined in user's original file) ... */ }
+    } 
 }
