@@ -16,6 +16,7 @@ using System.Net.Http;
 using Windows.Storage;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -42,6 +43,10 @@ namespace WinUI3App1
         // Global state
         private static PhotoBoothState _state = PhotoBoothState.Idle; // will be used to track the current state of the app, updates will automatically trigger MQTT status updates
 
+        // Background image preloading
+        public static BitmapImage PreloadedBackgroundImage { get; private set; }
+
+
 
         public App()
         {
@@ -51,6 +56,7 @@ namespace WinUI3App1
             // to allow for async loading of settings.
         }
 
+        /// Application entry point
         protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
             // 1. Load settings FIRST - these are needed for logger and other initializations
@@ -89,6 +95,10 @@ namespace WinUI3App1
             ConfigureLogging(); // This will now have access to CurrentSettings and PhotoboothIdentifier
 
             Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+
+            // 4. Preload background image if specified
+            await PreloadBackgroundImageAsync();
+
 
             // 4. Initialize MQTT Service (for commands, status, etc.)
             string mqttBroker = CurrentSettings.MqttBrokerAddress;
@@ -533,8 +543,11 @@ namespace WinUI3App1
                                 {
                                     App.Logger?.Debug("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
                                     // These methods in MainPage.xaml.cs must be public
+
+                                    //TODO: group these calls into a single method in MainPage, something like RefreshUI() or ApplyNewSettings()
                                     mainPageInstance.LoadDynamicUITexts();
-                                    await mainPageInstance.LoadBackgroundFromSettings();
+                                    await mainPageInstance.LoadPageBackgroundAsync();
+
                                     App.Logger?.Debug("App: MainPage UI refresh calls completed.");
                                 }
                                 else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
@@ -683,7 +696,7 @@ namespace WinUI3App1
                         });
 
                     // This message should NOT be retained; it's a point-in-time snapshot.
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, false);
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, true);
                     Logger?.Information("App: Successfully published current settings (full object) to {Topic}", topic);
                 }
                 catch (Exception ex)
@@ -806,6 +819,55 @@ namespace WinUI3App1
                 Logger?.Warning("App: UpdateAppSettings called with null settings. No update performed.");
             }
         }
+
+        private static async Task PreloadBackgroundImageAsync()
+        {
+            Logger?.Debug($"Preloading background images");
+
+            if (CurrentSettings == null || string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
+            {
+                Logger?.Information("App Preloader: No background image path set in settings, skipping preload.");
+                PreloadedBackgroundImage = null; // Ensure it's null if no path
+                return;
+            }
+
+            if (!File.Exists(CurrentSettings.BackgroundImagePath))
+            {
+                Logger?.Warning("App Preloader: Background image file not found at {Path}, skipping preload.", CurrentSettings.BackgroundImagePath);
+                PreloadedBackgroundImage = null;
+                return;
+            }
+
+            try
+            {
+                Logger?.Information("App Preloader: Preloading background image from {Path}", CurrentSettings.BackgroundImagePath);
+                BitmapImage bitmap = new BitmapImage();
+                using (FileStream stream = File.OpenRead(CurrentSettings.BackgroundImagePath))
+                {
+                    // Set DecodePixelWidth/Height here if you want to decode to a specific size during preload
+                    // This is useful if your original images are very large.
+                    // Example:
+                    // Find target screen dimensions or a reasonable max size
+                    // var mainDisplayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(MainWindow.AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+                    // if (mainDisplayArea != null) {
+                    //    bitmap.DecodePixelWidth = mainDisplayArea.WorkArea.Width;
+                    // } else {
+                    //    bitmap.DecodePixelWidth = 1920; // Fallback
+                    // }
+                    bitmap.DecodePixelWidth = 1920; // Or a sensible default based on your target display
+
+                    await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+                }
+                PreloadedBackgroundImage = bitmap;
+                Logger?.Information("App Preloader: Background image preloaded successfully.");
+            }
+            catch (Exception ex)
+            {
+                Logger?.Error(ex, "App Preloader: Failed to preload background image from {Path}", CurrentSettings.BackgroundImagePath);
+                PreloadedBackgroundImage = null;
+            }
+        }
+
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.

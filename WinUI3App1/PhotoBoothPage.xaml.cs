@@ -46,12 +46,8 @@ namespace WinUI3App
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
-            base.OnNavigatedTo(e);
-
             App.State = App.PhotoBoothState.LoadingMainPage;
-
-            // Load the background image
-            await LoadPageBackgroundAsync();
+            base.OnNavigatedTo(e);
 
             App.State = App.PhotoBoothState.Idle;
         }
@@ -88,77 +84,42 @@ namespace WinUI3App
         }
 
 
-        private async Task LoadPageBackgroundAsync()
+        // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
+        private async Task LoadPageBackgroundAsync() // Note: This method might not need to be async anymore if just assigning preloaded image
         {
-            App.Logger?.Debug("PhotoBoothPage: Attempting to load page background from App.CurrentSettings.");
-            try
+            App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);
+            var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
+            var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
+
+            if (pageBackgroundImageControl == null)
             {
-                string backgroundImagePath = "";
-                if (App.CurrentSettings != null)
-                {
-                    backgroundImagePath = App.CurrentSettings.BackgroundImagePath;
-                    App.Logger?.Debug("PhotoBoothPage: BackgroundImagePath from App.CurrentSettings: '{Path}'", string.IsNullOrEmpty(backgroundImagePath) ? "<empty>" : backgroundImagePath);
-                }
-                else
-                {
-                    App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null. Cannot determine background image path.");
-                    // Ensure UI elements are found by x:Name or are direct fields
-                    if (this.FindName("PageBackgroundImage") is Image pbiNull) pbiNull.Source = null;
-                    if (this.FindName("PageBackgroundOverlay") is Grid pboNull) pboNull.Visibility = Visibility.Collapsed;
-                    return;
-                }
-
-                // Attempt to find the controls by their x:Name from the XAML.
-                // Ensure PageBackgroundImage and PageBackgroundOverlay are correctly named in your PhotoBoothPage.xaml
-                var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
-                var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
-
-                if (pageBackgroundImageControl == null)
-                {
-                    App.Logger?.Error("PhotoBoothPage: Critical - PageBackgroundImage control not found in XAML. Cannot set page background.");
-                    // If the overlay exists independently, ensure it's also hidden.
-                    if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
-                    return;
-                }
-
-                if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
-                {
-                    App.Logger?.Information("PhotoBoothPage: Path is valid and file exists. Loading image: {Path}", backgroundImagePath);
-                    BitmapImage bitmap = new BitmapImage();
-                    using (FileStream stream = File.OpenRead(backgroundImagePath))
-                    {
-                        // Consider making DecodePixelWidth configurable or consistent if issues arise
-                        bitmap.DecodePixelWidth = 1920;
-                        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                    }
-                    pageBackgroundImageControl.Source = bitmap;
-                    if (pageBackgroundOverlayControl != null)
-                    {
-                        pageBackgroundOverlayControl.Visibility = Visibility.Visible;
-                        // Ensure overlay fill is set if not done in XAML, e.g., from App.CurrentSettings or a fixed value.
-                        // Example: pageBackgroundOverlayControl.Background = new SolidColorBrush(Microsoft.UI.Colors.Black) { Opacity = 0.3 };
-                    }
-                    App.Logger?.Information("PhotoBoothPage: Background successfully loaded from {Path}", backgroundImagePath);
-                }
-                else
-                {
-                    App.Logger?.Information("PhotoBoothPage: BackgroundImagePath is empty, null, or file does not exist. Clearing background.");
-                    pageBackgroundImageControl.Source = null;
-                    if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
-
-                    if (!string.IsNullOrEmpty(backgroundImagePath))
-                    {
-                        App.Logger?.Warning("PhotoBoothPage: Background image file specified in settings was NOT FOUND at: {Path}", backgroundImagePath);
-                    }
-                }
+                App.Logger?.Error("{PageName}: PageBackgroundImage control not found in XAML.", this.GetType().Name);
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                return;
             }
-            catch (Exception ex)
+
+            if (App.PreloadedBackgroundImage != null)
             {
-                App.Logger?.Error(ex, "PhotoBoothPage: Exception occurred in LoadPageBackgroundAsync.");
-                // Attempt to find and clear again in case of error during loading
-                if (this.FindName("PageBackgroundImage") is Image pbiEx) pbiEx.Source = null;
-                if (this.FindName("PageBackgroundOverlay") is Grid pboEx) pboEx.Visibility = Visibility.Collapsed;
+                pageBackgroundImageControl.Source = App.PreloadedBackgroundImage;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Visible;
+                App.Logger?.Information("{PageName}: Applied preloaded background image.", this.GetType().Name);
             }
+            else
+            {
+                // Fallback if preloading failed or no image was configured
+                pageBackgroundImageControl.Source = null;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                App.Logger?.Information("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
+
+                // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
+                // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
+                // For simplicity, this example assumes if preload failed, we show no background.
+                // If you want a fallback load:
+                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.BackgroundImagePath) && File.Exists(App.CurrentSettings.BackgroundImagePath)) { ... load it now ... }
+            }
+            // This method might no longer need to be async if it's just assigning the Source
+            // unless you keep the fallback direct load logic. For now, keep as Task for consistency.
+            await Task.CompletedTask;
         }
 
         private void UpdateProgressIndicator(int photosSuccessfullyCompleted, bool isCapturingNext)

@@ -47,18 +47,19 @@ namespace WinUI3App
             _cornerTouchTimer.Tick += CornerTouchTimer_Tick;
             _cornerTouchTimer.Start();
 
-            // Load background image
-            LoadBackgroundFromSettings();
-
             // Log application start
             App.Logger?.Information("Application started");
         }
 
 
-        private void Page_Loaded(object sender, RoutedEventArgs e)
+        private async void Page_Loaded(object sender, RoutedEventArgs e)
         {
             // Set focus to the page itself so it can receive keyboard input immediately
             this.Focus(FocusState.Programmatic);
+
+            // Load background image
+            await LoadPageBackgroundAsync();
+
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -69,9 +70,6 @@ namespace WinUI3App
 
             // Load UI texts
             LoadDynamicUITexts();
-
-            // Load the background image
-            await LoadBackgroundFromSettings();
 
             App.State = App.PhotoBoothState.Idle;
         }
@@ -99,7 +97,8 @@ namespace WinUI3App
                 Frame.Navigated -= Frame_Navigated;
 
                 // Reload the background image in case it changed
-                await LoadBackgroundFromSettings();
+                //TODO, update cached image
+                await LoadPageBackgroundAsync();
 
             }
         }
@@ -151,69 +150,42 @@ namespace WinUI3App
             }
         }
 
-        // Updated background loading method with additional fixes
-        public async Task LoadBackgroundFromSettings()
+        // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
+        public async Task LoadPageBackgroundAsync() 
         {
-            try
-            {
-                // No need to call SettingsManager.LoadSettingsAsync() again if App.CurrentSettings is already populated.
-                // If App.CurrentSettings might not be loaded yet (e.g. if MainPage loads before App.OnLaunched fully completes settings loading,
-                // which is unlikely but good to be mindful of timing), then load it:
-                // PhotoBoothSettings settings = App.CurrentSettings ?? await SettingsManager.LoadSettingsAsync();
-                // For simplicity, assuming App.CurrentSettings is populated by the time MainPage needs it:
+            App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);
+            var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
+            var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
 
-                if (App.CurrentSettings == null)
-                {
-                    App.Logger?.Warning("App.CurrentSettings is null in MainPage.LoadBackgroundFromSettings. Attempting to load settings directly.");
-                    // This direct load is a fallback, ideally App.CurrentSettings is reliable
-                    var settings = await SettingsManager.LoadSettingsAsync();
-                    if (App.CurrentSettings == null && settings != null) { /* App.CurrentSettings = settings; */ } // Avoid overwriting if App.OnLaunched sets it later
-                    if (settings == null)
-                    {
-                        App.Logger?.Error("Failed to load settings directly in MainPage.");
-                        BackgroundImage.Source = null; // Assuming BackgroundImage is your x:Name
-                        BackgroundOverlay.Visibility = Visibility.Collapsed; // Assuming BackgroundOverlay is your x:Name
-                        return;
-                    }
-                    // Use locally loaded 'settings' for this method if App.CurrentSettings was null
-                    string backgroundImagePath = settings.BackgroundImagePath;
-                    App.Logger?.Debug("MainPage attempting to load background image from: {Path}", backgroundImagePath);
-                    // ... rest of your loading logic using backgroundImagePath ...
-                }
-                else
-                {
-                    string backgroundImagePath = App.CurrentSettings.BackgroundImagePath;
-                    App.Logger?.Debug("MainPage attempting to load background image from App.CurrentSettings: {Path}", backgroundImagePath);
-                    // ... (your existing logic to load image from backgroundImagePath) ...
-                    if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
-                    {
-                        BitmapImage bitmap = new BitmapImage { CreateOptions = BitmapCreateOptions.None };
-                        using (FileStream stream = File.OpenRead(backgroundImagePath))
-                        {
-                            bitmap.DecodePixelWidth = 1920;
-                            await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                        }
-                        // Assuming your XAML has <Image x:Name="BackgroundImage"/> and <Grid x:Name="BackgroundOverlay"/>
-                        BackgroundImage.Source = bitmap;
-                        BackgroundOverlay.Visibility = Visibility.Visible;
-                        // BackgroundOverlay.Fill = new SolidColorBrush(Microsoft.UI.Colors.Black) { Opacity = 0.3 }; // Or similar
-                        Canvas.SetZIndex(BackgroundImage, -1); // If BackgroundImage is in a Canvas
-                    }
-                    else
-                    {
-                        BackgroundImage.Source = null;
-                        BackgroundOverlay.Visibility = Visibility.Collapsed;
-                        if (!string.IsNullOrEmpty(backgroundImagePath)) App.Logger?.Warning("Background image file not found: {Path}", backgroundImagePath);
-                        else App.Logger?.Information("No custom background image path set in settings.");
-                    }
-                }
-            }
-            catch (Exception ex)
+            if (pageBackgroundImageControl == null)
             {
-                App.Logger?.Error(ex, "Error loading background image in MainPage: {Message}", ex.Message);
-                if (this.FindName("BackgroundImage") is Image bgImg) bgImg.Source = null;
-                if (this.FindName("BackgroundOverlay") is Grid bgOverlay) bgOverlay.Visibility = Visibility.Collapsed;
+                App.Logger?.Error("{PageName}: PageBackgroundImage control not found in XAML.", this.GetType().Name);
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                return;
             }
+
+            if (App.PreloadedBackgroundImage != null)
+            {
+                pageBackgroundImageControl.Source = App.PreloadedBackgroundImage;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Visible;
+                App.Logger?.Information("{PageName}: Applied preloaded background image.", this.GetType().Name);
+            }
+            else
+            {
+                // Fallback if preloading failed or no image was configured
+                pageBackgroundImageControl.Source = null;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                App.Logger?.Information("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
+
+                // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
+                // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
+                // For simplicity, this example assumes if preload failed, we show no background.
+                // If you want a fallback load:
+                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.BackgroundImagePath) && File.Exists(App.CurrentSettings.BackgroundImagePath)) { ... load it now ... }
+            }
+            // This method might no longer need to be async if it's just assigning the Source
+            // unless you keep the fallback direct load logic. For now, keep as Task for consistency.
+            await Task.CompletedTask;
         }
 
         private void HandleCornerTouch(string cornerName)

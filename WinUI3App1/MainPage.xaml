@@ -12,19 +12,11 @@
 
   <!-- Root grid - set explicit z-index for child elements -->
   <Grid x:Name="RootGrid" Background="Transparent">
-      
-    <!-- Background Image - make sure this is at the back -->
-    <Image x:Name="BackgroundImage"
-           Stretch="UniformToFill"
-           Canvas.ZIndex="-1"/>
 
-    <!-- Optional semi-transparent overlay for better text visibility -->
-    <Rectangle x:Name="BackgroundOverlay"
-               Fill="Black"
-               Opacity="0.3"
-               Canvas.ZIndex="0"/>
+        <Image x:Name="PageBackgroundImage" Stretch="UniformToFill" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+        <Grid x:Name="PageBackgroundOverlay" Background="#4C000000" Visibility="Collapsed"/>
 
-    <!-- Main Content -->
+        <!-- Main Content -->
     <StackPanel HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Spacing="0"
