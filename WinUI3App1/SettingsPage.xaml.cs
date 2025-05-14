@@ -189,6 +189,10 @@ namespace WinUI3App1
 
             await SettingsManager.SaveSettingsAsync(_loadedSettingsModel);
             Debug.WriteLine("SettingsPage: Settings saved to JSON via SettingsManager.");
+
+            App.UpdateAppSettings(_loadedSettingsModel);
+            App.Logger?.Information("SettingsPage: App.CurrentSettings updated with latest saved values.");
+
             StoreOriginalValues(); // Update original values to reflect the newly saved state
         }
 
@@ -281,7 +285,8 @@ namespace WinUI3App1
             if (ValidateSettings())
             {
                 await SaveSettingsAsync();
-                // Optionally provide feedback like "Settings Saved!"
+
+                // TODO: Optionally provide feedback like "Settings Saved!"
                 // For now, just go back or indicate saved state.
                 if (Frame.CanGoBack) Frame.GoBack();
             }

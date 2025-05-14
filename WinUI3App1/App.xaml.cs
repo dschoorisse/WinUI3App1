@@ -788,6 +788,24 @@ namespace WinUI3App1
             }
         }
 
+        // New public static method to update CurrentSettings
+        public static void UpdateAppSettings(PhotoBoothSettings newSettings)
+        {
+            if (newSettings != null)
+            {
+                CurrentSettings = newSettings;
+                Logger?.Information("App: App.CurrentSettings has been updated programmatically.");
+
+                // Optionally, if PhotoboothIdentifier could change via SettingsPage (unlikely for now), re-validate it here.
+                // string oldId = PhotoboothIdentifier;
+                // PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+                // ... (validation logic for PhotoboothIdentifier) ...
+            }
+            else
+            {
+                Logger?.Warning("App: UpdateAppSettings called with null settings. No update performed.");
+            }
+        }
 
         // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
         // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.

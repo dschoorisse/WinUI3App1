@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Serilog;
 using System;
@@ -29,18 +30,32 @@ namespace WinUI3App
         {
             this.InitializeComponent();
             this.Loaded += PhotoBoothPage_Loaded;
+
         }
 
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
+            await LoadPageBackgroundAsync();
 
             App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
 
-            await LoadPageBackgroundAsync();
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
             ResetProcedure();
             await StartPhotoProcedure();
         }
+
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+
+            App.State = App.PhotoBoothState.LoadingMainPage;
+
+            // Load the background image
+            await LoadPageBackgroundAsync();
+
+            App.State = App.PhotoBoothState.Idle;
+        }
+
 
         // Method to load configurable texts
         private void LoadConfigurableTexts()
@@ -74,40 +89,75 @@ namespace WinUI3App
 
 
         private async Task LoadPageBackgroundAsync()
-        { 
-            App.Logger.Debug("Loading page background image from settings...");
+        {
+            App.Logger?.Debug("PhotoBoothPage: Attempting to load page background from App.CurrentSettings.");
             try
             {
-                var localSettings = ApplicationData.Current.LocalSettings;
-                string backgroundImagePath = localSettings.Values["BackgroundImagePath"] as string ?? "";
-
-                // Check if the path is valid and the file exists
-                if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
+                string backgroundImagePath = "";
+                if (App.CurrentSettings != null)
                 {
-                    // Load the image from the specified path
-                    App.Logger.Debug($"Loading background image from path: {backgroundImagePath}");
-                    BitmapImage bitmap = new BitmapImage();
-                    using (FileStream stream = File.OpenRead(backgroundImagePath))
-                    {
-                        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                    }
-                    PageBackgroundImage.Source = bitmap;
-                    PageBackgroundOverlay.Visibility = Visibility.Visible;
+                    backgroundImagePath = App.CurrentSettings.BackgroundImagePath;
+                    App.Logger?.Debug("PhotoBoothPage: BackgroundImagePath from App.CurrentSettings: '{Path}'", string.IsNullOrEmpty(backgroundImagePath) ? "<empty>" : backgroundImagePath);
                 }
                 else
                 {
-                    // If the path is empty or the file doesn't exist, set a default image or hide the overlay
-                    App.Logger.Debug("Background image path is empty or file does not exist. Hiding overlay.");
-                    PageBackgroundImage.Source = null;
-                    PageBackgroundOverlay.Visibility = Visibility.Collapsed;
+                    App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null. Cannot determine background image path.");
+                    // Ensure UI elements are found by x:Name or are direct fields
+                    if (this.FindName("PageBackgroundImage") is Image pbiNull) pbiNull.Source = null;
+                    if (this.FindName("PageBackgroundOverlay") is Grid pboNull) pboNull.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                // Attempt to find the controls by their x:Name from the XAML.
+                // Ensure PageBackgroundImage and PageBackgroundOverlay are correctly named in your PhotoBoothPage.xaml
+                var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
+                var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
+
+                if (pageBackgroundImageControl == null)
+                {
+                    App.Logger?.Error("PhotoBoothPage: Critical - PageBackgroundImage control not found in XAML. Cannot set page background.");
+                    // If the overlay exists independently, ensure it's also hidden.
+                    if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(backgroundImagePath) && File.Exists(backgroundImagePath))
+                {
+                    App.Logger?.Information("PhotoBoothPage: Path is valid and file exists. Loading image: {Path}", backgroundImagePath);
+                    BitmapImage bitmap = new BitmapImage();
+                    using (FileStream stream = File.OpenRead(backgroundImagePath))
+                    {
+                        // Consider making DecodePixelWidth configurable or consistent if issues arise
+                        bitmap.DecodePixelWidth = 1920;
+                        await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+                    }
+                    pageBackgroundImageControl.Source = bitmap;
+                    if (pageBackgroundOverlayControl != null)
+                    {
+                        pageBackgroundOverlayControl.Visibility = Visibility.Visible;
+                        // Ensure overlay fill is set if not done in XAML, e.g., from App.CurrentSettings or a fixed value.
+                        // Example: pageBackgroundOverlayControl.Background = new SolidColorBrush(Microsoft.UI.Colors.Black) { Opacity = 0.3 };
+                    }
+                    App.Logger?.Information("PhotoBoothPage: Background successfully loaded from {Path}", backgroundImagePath);
+                }
+                else
+                {
+                    App.Logger?.Information("PhotoBoothPage: BackgroundImagePath is empty, null, or file does not exist. Clearing background.");
+                    pageBackgroundImageControl.Source = null;
+                    if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+
+                    if (!string.IsNullOrEmpty(backgroundImagePath))
+                    {
+                        App.Logger?.Warning("PhotoBoothPage: Background image file specified in settings was NOT FOUND at: {Path}", backgroundImagePath);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                PageBackgroundImage.Source = null;
-                PageBackgroundOverlay.Visibility = Visibility.Collapsed;
-                // Log
-                App.Logger?.Error($"Error loading background image: {ex.Message}");
+                App.Logger?.Error(ex, "PhotoBoothPage: Exception occurred in LoadPageBackgroundAsync.");
+                // Attempt to find and clear again in case of error during loading
+                if (this.FindName("PageBackgroundImage") is Image pbiEx) pbiEx.Source = null;
+                if (this.FindName("PageBackgroundOverlay") is Grid pboEx) pboEx.Visibility = Visibility.Collapsed;
             }
         }
 
