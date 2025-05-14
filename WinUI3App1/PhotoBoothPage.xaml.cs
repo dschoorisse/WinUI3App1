@@ -466,18 +466,63 @@ namespace WinUI3App
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
             PhotoGallery.Visibility = Visibility.Collapsed; 
             ActionButtonsPanel.Visibility = Visibility.Collapsed;
-            OverlayGrid.Visibility = Visibility.Visible;
-            OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving..."; // Use from settings
+
+            #region Fade-in of overlay
+            // --- Start of Fade-in Logic for OverlayGrid ---
+            OverlayGrid.Opacity = 0; // Start fully transparent
+            OverlayGrid.Visibility = Visibility.Visible; // Make it visible but transparent
+            OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving...";
+
+            // Create and start the fade-in animation
+            var fadeInAnimation = new DoubleAnimation
+            {
+                To = 1.0, // Fade to fully opaque
+                Duration = TimeSpan.FromMilliseconds(300), // Adjust duration as needed (e.g., 300-500ms)
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } // Smooth easing
+            };
+            Storyboard.SetTarget(fadeInAnimation, OverlayGrid);
+            Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fadeInAnimation);
+            storyboard.Begin();
+            // --- End of Fade-in Logic for OverlayGrid ---
+            #endregion
 
             // Simulate saving process 
-            await Task.Delay(1000);
-            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!"; // Use from settings
-            await Task.Delay(1500);
-            OverlayGrid.Visibility = Visibility.Collapsed;
-            App.State = App.PhotoBoothState.Finished;
+            await Task.Delay(1000); // Original delay
 
-            // Return to the MainPage
-            NavigateBackToMainPage("Accepted");
+            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
+            await Task.Delay(1500); // Original delay
+
+            #region Fade-out overlay
+            // --- Optional: Fade out OverlayGrid ---
+            // If you want it to fade out instead of abruptly disappearing:
+            var fadeOutAnimation = new DoubleAnimation
+            {
+                To = 0.0,
+                Duration = TimeSpan.FromMilliseconds(300),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+            Storyboard.SetTarget(fadeOutAnimation, OverlayGrid);
+            Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+
+            var storyboardOut = new Storyboard();
+            storyboardOut.Children.Add(fadeOutAnimation);
+            storyboardOut.Completed += (s, ev) => {
+                OverlayGrid.Visibility = Visibility.Collapsed; // Hide it after fade out completes
+            };
+            storyboardOut.Begin();
+            await Task.Delay(300); // Only if you need to wait for fade-out before navigating
+            // --- End of Optional Fade out ---
+            #endregion
+
+            // If not fading out, just hide it:
+            // OverlayGrid.Visibility = Visibility.Collapsed; // Original way to hide
+
+            App.State = App.PhotoBoothState.Finished; // Use App.State
+
+            NavigateBackToMainPage("Accepted"); // Call your refactored navigation method
         }
 
         private async void RetakeButton_Click(object sender, RoutedEventArgs e)
