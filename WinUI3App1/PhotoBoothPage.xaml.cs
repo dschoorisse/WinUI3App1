@@ -495,30 +495,33 @@ namespace WinUI3App
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
             await Task.Delay(1500); // Original delay
 
-            #region Fade-out overlay
-            // --- Optional: Fade out OverlayGrid ---
-            // If you want it to fade out instead of abruptly disappearing:
-            var fadeOutAnimation = new DoubleAnimation
-            {
-                To = 0.0,
-                Duration = TimeSpan.FromMilliseconds(300),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
-            Storyboard.SetTarget(fadeOutAnimation, OverlayGrid);
-            Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+            // If no error occurred, proceed to the next step
+            // we do not need to remove the overlay, the whole page is faded out and it will look nice
 
-            var storyboardOut = new Storyboard();
-            storyboardOut.Children.Add(fadeOutAnimation);
-            storyboardOut.Completed += (s, ev) => {
-                OverlayGrid.Visibility = Visibility.Collapsed; // Hide it after fade out completes
-            };
-            storyboardOut.Begin();
-            await Task.Delay(300); // Only if you need to wait for fade-out before navigating
-            // --- End of Optional Fade out ---
-            #endregion
+            //#region Fade-out overlay
+            //// --- Optional: Fade out OverlayGrid ---
+            //// If you want it to fade out instead of abruptly disappearing:
+            //var fadeOutAnimation = new DoubleAnimation
+            //{
+            //    To = 0.0,
+            //    Duration = TimeSpan.FromMilliseconds(300),
+            //    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            //};
+            //Storyboard.SetTarget(fadeOutAnimation, OverlayGrid);
+            //Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+
+            //var storyboardOut = new Storyboard();
+            //storyboardOut.Children.Add(fadeOutAnimation);
+            //storyboardOut.Completed += (s, ev) => {
+            //    OverlayGrid.Visibility = Visibility.Collapsed; // Hide it after fade out completes
+            //};
+            //storyboardOut.Begin();
+            //await Task.Delay(300); // Only if you need to wait for fade-out before navigating
+            //// --- End of Optional Fade out ---
+            //#endregion
 
             // If not fading out, just hide it:
-            // OverlayGrid.Visibility = Visibility.Collapsed; // Original way to hide
+            //// OverlayGrid.Visibility = Visibility.Collapsed; // Original way to hide
 
             App.State = App.PhotoBoothState.Finished; // Use App.State
 
@@ -552,7 +555,7 @@ namespace WinUI3App
             NavigateBackToMainPage("Timeout"); // Call the extracted method
         }
 
-        private void NavigateBackToMainPage(string reason)
+        private async void NavigateBackToMainPage(string reason)
         {
             App.Logger?.Information("PhotoBoothPage: Navigating back to MainPage. Reason: {Reason}", reason);
 
@@ -565,6 +568,39 @@ namespace WinUI3App
             }
             // If called after "Accept", App.State would have been set to Finished already.
 
+            #region Fade out page
+            // --- Fade out the current page (PhotoBoothPage) ---
+            var pageRoot = this.Content as UIElement; // Assuming 'this.Content' is your page's root container like RootGrid
+            if (pageRoot != null)
+            {
+                var fadeOutAnimation = new DoubleAnimation
+                {
+                    To = 0.0,
+                    Duration = TimeSpan.FromMilliseconds(250), // Adjust duration as needed
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(fadeOutAnimation, pageRoot);
+                Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(fadeOutAnimation);
+
+                // Create a TaskCompletionSource to await the animation's completion
+                var tcs = new TaskCompletionSource<bool>();
+                storyboard.Completed += (s, e_sb) => tcs.SetResult(true);
+
+                storyboard.Begin();
+                await tcs.Task; // Wait for the fade-out to complete
+                App.Logger?.Debug("PhotoBoothPage: Fade out complete.");
+            }
+            else
+            {
+                App.Logger?.Warning("PhotoBoothPage: Could not find page root for fade-out animation.");
+            }
+            // --- End of Fade out ---
+            #endregion
+
+            #region Perform actual navigation
             // Attempt to find the root frame and navigate
             Frame rootFrame = null;
             if (App.MainWindow.Content is Frame appRootFrame)
@@ -593,6 +629,7 @@ namespace WinUI3App
             {
                 App.Logger?.Error("PhotoBoothPage: Could not find a suitable Frame to navigate back to MainPage.");
             }
+            #endregion
         }
 
     }

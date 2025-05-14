@@ -14,7 +14,8 @@ using Microsoft.UI.Xaml.Input;
 using Windows.Storage;
 using Microsoft.UI.Xaml.Navigation;
 using System.Threading.Tasks;
-using Windows.UI; // For handling keyboard shortcuts
+using Windows.UI;
+using Microsoft.UI.Xaml.Media.Animation; // For handling keyboard shortcuts
 
 namespace WinUI3App
 {
@@ -54,11 +55,40 @@ namespace WinUI3App
 
         private async void Page_Loaded(object sender, RoutedEventArgs e)
         {
-            // Set focus to the page itself so it can receive keyboard input immediately
+            App.Logger?.Information("MainPage: Page Loaded.");
             this.Focus(FocusState.Programmatic);
 
-            // Load background image
+            // Load dynamic texts and background image now that elements are ready
+            LoadDynamicUITexts();
             await LoadPageBackgroundAsync();
+
+            // Transition in the content if it was initially hidden for a smooth load
+            // Assuming your root content Grid in MainPage.xaml is named "RootContentGrid" and starts with Opacity="0"
+            if (this.FindName("RootGrid") is UIElement rootContent)
+            {
+                // Ensure it's actually starting from 0 if XAML didn't set it or if re-loaded
+                // rootContent.Opacity = 0; // Not strictly needed if XAML Opacity="0"
+
+                var fadeInAnimation = new DoubleAnimation
+                {
+                    To = 1.0,
+                    Duration = TimeSpan.FromMilliseconds(600), // Adjust as needed
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                };
+                Storyboard.SetTarget(fadeInAnimation, rootContent);
+                Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+                var sb = new Storyboard();
+                sb.Children.Add(fadeInAnimation);
+                sb.Begin();
+                App.Logger?.Debug("MainPage: Content fade-in animation started.");
+            }
+            else
+            {
+                App.Logger?.Warning("MainPage: RootContentGrid not found for fade-in animation.");
+            }
+
+            // Set final state after loading and initial animations
+            App.State = App.PhotoBoothState.Idle;
 
         }
 
@@ -70,6 +100,7 @@ namespace WinUI3App
 
             // Load UI texts
             LoadDynamicUITexts();
+
 
             App.State = App.PhotoBoothState.Idle;
         }
@@ -89,8 +120,7 @@ namespace WinUI3App
 
         private async void Frame_Navigated(object sender, NavigationEventArgs e)
         {
-
-            // If we're returning to this page from the settings page
+            // Reload settings if coming back from settings page
             if (e.SourcePageType == this.GetType())
             {
                 // Remove the handler to prevent memory leaks
@@ -99,7 +129,6 @@ namespace WinUI3App
                 // Reload the background image in case it changed
                 //TODO, update cached image
                 await LoadPageBackgroundAsync();
-
             }
         }
 

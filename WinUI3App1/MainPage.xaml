@@ -11,7 +11,7 @@
     Background="Transparent">
 
   <!-- Root grid - set explicit z-index for child elements -->
-  <Grid x:Name="RootGrid" Background="Transparent">
+    <Grid x:Name="RootGrid" Background="Transparent" Opacity="0">
 
         <Image x:Name="PageBackgroundImage" Stretch="UniformToFill" VerticalAlignment="Center" HorizontalAlignment="Center"/>
         <Grid x:Name="PageBackgroundOverlay" Background="#4C000000" Visibility="Collapsed"/>
