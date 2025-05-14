@@ -274,13 +274,18 @@ namespace WinUI3App
             }
         }
 
+        // This method simulates taking a photo. In a real application, this would involve camera SDK calls.
+        // It updates the UI to show the taken photo and animates it.
+        // It also handles the progress indicator and prepares for the next photo or review screen.
+        // The method is asynchronous and uses await for delays and animations.
+        // It also sends status updates over MQTT
         private async Task TakePhotoSimulation()
         {
             // Send status update over MQTT
             App.State = App.PhotoBoothState.TakingPhoto;
 
             // Log the start of this photo simulation step, indicating which photo number this is (1-based)
-            App.Logger.Information("TakePhotoSimulation: Starting simulation for photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
+            App.Logger.Information("TakePhotoSimulation: Starting photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
             // Set the application's current state to indicate a photo is being "taken"
             App.State = App.PhotoBoothState.TakingPhoto;
