@@ -406,7 +406,8 @@ namespace WinUI3App1
             }
 
             // --- Debug Sink (remains the same) ---
-            loggerConfiguration.WriteTo.Debug(); // Standard Visual Studio debug output (usually text-based)
+            // TODO: change this so that only warnings are logged to the console
+            //loggerConfiguration.WriteTo.Debug(); // Standard Visual Studio debug output (usually text-based)
 
             Logger = loggerConfiguration.CreateLogger();
             Log.Logger = Logger; // Assign to Serilog's global static logger

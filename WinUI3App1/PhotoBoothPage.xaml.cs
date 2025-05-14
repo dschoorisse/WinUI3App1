@@ -37,19 +37,15 @@ namespace WinUI3App
         {
             await LoadPageBackgroundAsync();
 
-            App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
-
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
-            ResetProcedure();
             await StartPhotoProcedure();
         }
 
+        // This happens before the _Loaded event, but the UI tree is not yet fully ready
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
-            App.State = App.PhotoBoothState.LoadingMainPage;
             base.OnNavigatedTo(e);
-
-            App.State = App.PhotoBoothState.Idle;
+            App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
         }
 
 
@@ -85,7 +81,7 @@ namespace WinUI3App
 
 
         // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
-        private async Task LoadPageBackgroundAsync() // Note: This method might not need to be async anymore if just assigning preloaded image
+        private async Task LoadPageBackgroundAsync()
         {
             App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);
             var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
@@ -147,8 +143,6 @@ namespace WinUI3App
             // Reset the state and UI elements
             _photosTaken = 0;
             _photoPaths.Clear();
-
-            App.State = App.PhotoBoothState.Idle;
 
             InstructionTextBackground.Opacity = 0;
             CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
