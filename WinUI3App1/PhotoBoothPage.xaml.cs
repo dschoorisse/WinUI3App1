@@ -420,7 +420,7 @@ namespace WinUI3App
             // UpdateProgressIndicator(TOTAL_PHOTOS_TO_TAKE, false); 
 
             // Hide the progress dots panel for the final gallery review
-            ProgressIndicatorPanel.Visibility = Visibility.Collapsed; // <<-- KEY CHANGE HERE
+            ProgressIndicatorPanel.Visibility = Visibility.Collapsed; 
 
             // Populate and show the final photo gallery
             if (_photoPaths.Count > 0) Photo1Image.Source = new BitmapImage(new Uri(_photoPaths[0])); else Photo1Image.Source = null;
