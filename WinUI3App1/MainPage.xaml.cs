@@ -197,14 +197,14 @@ namespace WinUI3App
             {
                 pageBackgroundImageControl.Source = App.PreloadedBackgroundImage;
                 if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Visible;
-                App.Logger?.Information("{PageName}: Applied preloaded background image.", this.GetType().Name);
+                App.Logger?.Debug("{PageName}: Applied preloaded background image.", this.GetType().Name);
             }
             else
             {
                 // Fallback if preloading failed or no image was configured
                 pageBackgroundImageControl.Source = null;
                 if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
-                App.Logger?.Information("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
+                App.Logger?.Warning("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
 
                 // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
                 // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
