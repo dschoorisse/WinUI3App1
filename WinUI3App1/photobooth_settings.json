@@ -33,9 +33,9 @@
     "COMPUTER-NAME-2"
   ],
   "UiMainPageTitleText": "Welkom!",
-  "UiMainPageSubtitleText": "Touch a button below to begin your awesome photo experience!",
-  "UiMainPagePhotoButtonText": "Start Photo Session",
-  "UiMainPageVideoButtonText": "Create Video Clip",
+  "UiMainPageSubtitleText": "Laten we deze mooie dag vastleggen! Kies hieronder voor een foto of video.",
+  "UiMainPagePhotoButtonText": "Foto",
+  "UiMainPageVideoButtonText": "Video",
   "UiInstructionTextFormat": "Er worden zometeen {0} foto's gemaakt, ben je klaar?",
   "UiCountdown3": "3",
   "UiCountdown2": "2",
