@@ -115,7 +115,7 @@ namespace WinUI3App1
                 {
                     MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
                     MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
-                    MqttServiceInstance.SettingsUpdatedRemotely += OnRemoteSettingsUpdated;
+                    MqttServiceInstance.ApplyRemoteSettingsAsync += ProcessAndApplyRemoteSettingsAsync; // VOEG DEZE REGEL TOE
                     Logger.Debug("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
                 }
                 else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
@@ -443,7 +443,7 @@ namespace WinUI3App1
             if (MqttServiceInstance != null)
             {
                 MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
-                MqttServiceInstance.SettingsUpdatedRemotely -= OnRemoteSettingsUpdated;
+                MqttServiceInstance.ApplyRemoteSettingsAsync -= ProcessAndApplyRemoteSettingsAsync;
                 await MqttServiceInstance.DisposeAsync();
                 Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
             }
@@ -456,138 +456,152 @@ namespace WinUI3App1
 
         }
 
-        private async void OnRemoteSettingsUpdated(object sender, EventArgs e)
+        private async Task ProcessAndApplyRemoteSettingsAsync(PhotoBoothSettings incomingSettings)
         {
-            App.Logger?.Information("App: Event received - Remote settings have been updated. Attempting to reload and apply.");
-            PhotoBoothSettings newSettings = null;
-            PhotoBoothSettings oldEffectiveSettings = CurrentSettings; // Keep a reference to settings before reload
+            App.Logger?.Information("App: Received incoming settings from MQTT for processing. Incoming Timestamp: {Timestamp}", incomingSettings.LastModifiedUtc);
 
-            try { newSettings = await SettingsManager.LoadSettingsAsync(); }
-            catch (Exception ex) { App.Logger?.Error(ex, "App: Failed to reload settings after remote update. Aborting apply."); return; }
+            // Behoud de PhotoboothId en LastModifiedUtc van de inkomende settings, deze zijn leidend.
+            // De 'incomingSettings' bevat de waarden zoals ze via MQTT zijn gestuurd.
 
-            if (newSettings != null)
+            // 1. Achtergrondafbeelding logica
+            string newLocalBackgroundImagePath = incomingSettings.BackgroundImagePath; // Start met wat binnenkomt
+            bool requiresSave = false; // Wordt true als we iets wijzigen aan incomingSettings
+
+            if (!string.IsNullOrEmpty(incomingSettings.RemoteBackgroundImageUrl))
             {
-                CurrentSettings = newSettings; // Update App.CurrentSettings to the latest from file (which was just saved by MqttService)
-                                               // ... (PhotoboothIdentifier update logic as before) ...
-                App.Logger?.Information("App: Settings reloaded into App.CurrentSettings. Current Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+                // Er is een RemoteBackgroundImageUrl opgegeven. Probeer te downloaden.
+                App.Logger?.Information("App: RemoteBackgroundImageUrl ('{Url}') is specified. Attempting download.", incomingSettings.RemoteBackgroundImageUrl);
+                string downloadedPath = await DownloadAndSaveImageAsync(
+                    incomingSettings.RemoteBackgroundImageUrl,
+                    incomingSettings.RemoteBackgroundImageHash,
+                    (incomingSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString()) // Filename seed
+                );
 
-
-                // --- Handle Background Image Download ---
-                bool backgroundChanged = false;
-                string newLocalBackgroundImagePath = oldEffectiveSettings?.BackgroundImagePath ?? ""; // Start with old path
-
-                if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) &&
-                    (CurrentSettings.RemoteBackgroundImageUrl != CurrentSettings.LastSuccessfullyDownloadedImageUrl ||
-                     (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageHash) && CurrentSettings.RemoteBackgroundImageHash != CurrentSettings.LastSuccessfullyDownloadedImageHash) ||
-                     string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath) || // If no local path is set yet
-                     !File.Exists(CurrentSettings.BackgroundImagePath)) // Or if current local file doesn't exist
-                   )
+                if (!string.IsNullOrEmpty(downloadedPath))
                 {
-                    App.Logger?.Information("App: New or updated remote background image URL/hash detected, or local file missing. Attempting download.");
-                    string downloadedPath = await DownloadAndSaveImageAsync(
-                        CurrentSettings.RemoteBackgroundImageUrl,
-                        CurrentSettings.RemoteBackgroundImageHash,
-                        // Use hash of URL as part of filename seed if generating unique filenames, or just use fixed name
-                        (CurrentSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString())
-                    );
-
-                    if (!string.IsNullOrEmpty(downloadedPath))
-                    {
-                        newLocalBackgroundImagePath = downloadedPath;
-                        CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath; // Update the path for UI use
-                        CurrentSettings.LastSuccessfullyDownloadedImageUrl = CurrentSettings.RemoteBackgroundImageUrl;
-                        CurrentSettings.LastSuccessfullyDownloadedImageHash = CurrentSettings.RemoteBackgroundImageHash;
-                        backgroundChanged = true;
-                        App.Logger?.Information("App: Background image updated locally to: {Path}", newLocalBackgroundImagePath);
-                    }
-                    else
-                    {
-                        App.Logger?.Warning("App: Failed to download new remote background. Current background (if any) will be kept or cleared if path was invalid.");
-                        // If download fails, decide behavior: keep old BackgroundImagePath or clear it?
-                        // Let's assume if RemoteBackgroundImageUrl was set but download failed, we clear the path to avoid using stale image.
-                        if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl))
-                        {
-                            newLocalBackgroundImagePath = ""; // Clear path on failure if a remote URL was specified
-                            CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
-                            backgroundChanged = true; // Path changed to empty
-                        }
-                    }
-                }
-                else if (string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
-                {
-                    // Remote URL was cleared, so local background should also be cleared
-                    App.Logger?.Information("App: RemoteBackgroundImageUrl is empty. Clearing local background image path.");
-                    newLocalBackgroundImagePath = "";
-                    CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
-                    CurrentSettings.LastSuccessfullyDownloadedImageUrl = ""; // Clear tracking too
-                    CurrentSettings.LastSuccessfullyDownloadedImageHash = "";
-                    backgroundChanged = true;
-                }
-
-
-                // If background or other critical settings changed, save CurrentSettings again
-                // The SaveSettingsAsync in MqttService saved what was received from MQTT.
-                // Now we might have updated it further (e.g., BackgroundImagePath, LastSuccessfullyDownloaded info).
-                if (backgroundChanged) // Or any other property modified here after loading from remote
-                {
-                    App.Logger?.Information("App: Settings changed after remote update. Saving updated settings.");
-                    await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // 'true' as this is part of remote update flow, preserve LastModifiedUtc from MQTT push
-                }
-
-                // --- Dispatch UI updates to the UI thread ---
-                if (MainWindow?.DispatcherQueue != null)
-                {
-                    MainWindow.DispatcherQueue.TryEnqueue(async () =>
-                    {
-                        App.Logger?.Debug("App: Now on UI thread. Attempting to refresh active page UI.");
-                        try
-                        {
-                            if (MainWindow.Content is Frame rootFrame) // Ensure 'Frame' is Microsoft.UI.Xaml.Controls.Frame
-                            {
-                                if (rootFrame.Content is MainPage mainPageInstance)
-                                {
-                                    App.Logger?.Debug("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
-                                    // These methods in MainPage.xaml.cs must be public
-
-                                    //TODO: group these calls into a single method in MainPage, something like RefreshUI() or ApplyNewSettings()
-                                    mainPageInstance.LoadDynamicUITexts();
-                                    await mainPageInstance.LoadPageBackgroundAsync();
-
-                                    App.Logger?.Debug("App: MainPage UI refresh calls completed.");
-                                }
-                                else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
-                                {
-                                    App.Logger?.Debug("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
-                                    // PhotoBoothPage loads its texts/settings in its Page_Loaded or StartPhotoProcedure.
-                                    // If it needs to react to live changes while already active (e.g., for button texts if review screen is shown),
-                                    // it would need a public method like RefreshConfigurableTexts().
-                                    // photoBoothPageInstance.RefreshConfigurableTexts(); // Example call
-                                    // Its background is also loaded on Page_Loaded. A live background change would need similar handling.
-                                    // await photoBoothPageInstance.LoadPageBackgroundAsync(); // If such a public method exists
-                                }
-                                // Add 'else if' for other pages if they need live UI updates from settings
-                            }
-                            else
-                            {
-                                App.Logger?.Warning("App: MainWindow.Content is not a Frame on UI thread. Cannot determine active page to refresh.");
-                            }
-                        }
-                        catch (Exception uiEx)
-                        {
-                            App.Logger?.Error(uiEx, "App: Exception occurred during UI refresh on UI thread from OnRemoteSettingsUpdated.");
-                        }
-                    });
+                    // Download gelukt
+                    App.Logger?.Information("App: Background image downloaded successfully to: {Path}", downloadedPath);
+                    newLocalBackgroundImagePath = downloadedPath;
+                    incomingSettings.LastSuccessfullyDownloadedImageUrl = incomingSettings.RemoteBackgroundImageUrl;
+                    incomingSettings.LastSuccessfullyDownloadedImageHash = incomingSettings.RemoteBackgroundImageHash;
                 }
                 else
                 {
-                    App.Logger?.Error("App: MainWindow or its DispatcherQueue is null. Cannot dispatch UI updates for remote settings.");
+                    // Download mislukt
+                    App.Logger?.Warning("App: Failed to download background image from '{Url}'. The existing local BackgroundImagePath (if any was provided in MQTT message) will be cleared, or previous local path (if any) will be lost.", incomingSettings.RemoteBackgroundImageUrl);
+                    // Volgens jouw wens: als download mislukt, mag het lokale pad niet leeg zijn,
+                    // maar de JSON/MQTT moet wel het *resultaat* van de poging reflecteren.
+                    // Als download mislukt, dan is er geen *nieuw* lokaal pad.
+                    // Als er in `incomingSettings` een `BackgroundImagePath` was meegegeven samen met de `RemoteBackgroundImageUrl`,
+                    // dan wordt die `BackgroundImagePath` nu effectief genegeerd omdat de remote download prioriteit had en mislukte.
+                    newLocalBackgroundImagePath = ""; // Geen geldig nieuw lokaal pad
+                    incomingSettings.LastSuccessfullyDownloadedImageUrl = ""; // Mislukte download
+                    incomingSettings.LastSuccessfullyDownloadedImageHash = "";
+                }
+                // Update BackgroundImagePath in het object dat we gaan opslaan
+                if (incomingSettings.BackgroundImagePath != newLocalBackgroundImagePath)
+                {
+                    incomingSettings.BackgroundImagePath = newLocalBackgroundImagePath;
+                    requiresSave = true; // Markeer dat er een wijziging is die opslag vereist
                 }
             }
-            else
+            else // Geen RemoteBackgroundImageUrl opgegeven
             {
-                App.Logger?.Error("App: Reloaded settings (newSettings) are null after remote update notification. No changes applied to App.CurrentSettings.");
+                App.Logger?.Information("App: No RemoteBackgroundImageUrl specified. Using BackgroundImagePath ('{Path}') from incoming settings directly.", incomingSettings.BackgroundImagePath);
+                // Het `incomingSettings.BackgroundImagePath` (dat je via MQTT stuurde) blijft behouden.
+                // We moeten wel zorgen dat 'LastSuccessfullyDownloaded' info wordt gewist als er geen remote URL meer is.
+                if (!string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageUrl))
+                {
+                    incomingSettings.LastSuccessfullyDownloadedImageUrl = "";
+                    requiresSave = true;
+                }
+                if (!string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageHash))
+                {
+                    incomingSettings.LastSuccessfullyDownloadedImageHash = "";
+                    requiresSave = true;
+                }
+                // `newLocalBackgroundImagePath` is hier al `incomingSettings.BackgroundImagePath`.
+                // Als `incomingSettings.BackgroundImagePath` veranderd is t.o.v. wat er al in `CurrentSettings` stond,
+                // dan zal dat een `requiresSave` triggeren als we `CurrentSettings` updaten.
+                // De check `incomingSettings.BackgroundImagePath != newLocalBackgroundImagePath` is hierboven al gedaan
+                // of de `incomingSettings.BackgroundImagePath` wordt hier direct gerespecteerd.
+            }
+
+            // Vergelijk de resulterende 'incomingSettings' met 'CurrentSettings' om te zien of er echt iets is veranderd
+            // dat opslag en UI update vereist. Dit is een beetje lastig zonder een diepe vergelijking.
+            // Voor nu gaan we ervan uit dat als dit pad wordt aangeroepen, we de `incomingSettings` als de nieuwe waarheid beschouwen.
+            // De `LastModifiedUtc` in `incomingSettings` is leidend.
+
+            // Controleer of de PhotoboothId is veranderd en valideer deze.
+            if (string.IsNullOrWhiteSpace(incomingSettings.PhotoboothId) ||
+                incomingSettings.PhotoboothId.Contains("/") || incomingSettings.PhotoboothId.Contains("+") || incomingSettings.PhotoboothId.Contains("#"))
+            {
+                string oldId = incomingSettings.PhotoboothId;
+                incomingSettings.PhotoboothId = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
+                Logger?.Warning("App: Invalid PhotoboothId ('{OldId}') in remote settings, corrected to: {NewId}", oldId, incomingSettings.PhotoboothId);
+                requiresSave = true;
+            }
+            // Update de globale PhotoboothIdentifier als deze is gewijzigd.
+            if (PhotoboothIdentifier != incomingSettings.PhotoboothId)
+            {
+                PhotoboothIdentifier = incomingSettings.PhotoboothId;
+                // TODO: Overweeg MQTT client opnieuw te verbinden als PhotoboothId wijzigt,
+                //       omdat topics ervan afhangen. Voor nu loggen we alleen.
+                Logger?.Warning("App: PhotoboothIdentifier changed to {NewId} due to remote settings. MQTT topics might need re-subscription if service was already connected.", PhotoboothIdentifier);
+                requiresSave = true;
+            }
+
+
+            // Update de globale CurrentSettings
+            PhotoBoothSettings oldEffectiveSettings = CurrentSettings; // Voor UI vergelijking
+            CurrentSettings = incomingSettings; // 'incomingSettings' is nu de nieuwe autoriteit
+            App.Logger?.Information("App: App.CurrentSettings updated with processed remote settings. New Timestamp: {Timestamp}", CurrentSettings.LastModifiedUtc);
+
+            // 3. Sla de definitief verwerkte instellingen op.
+            // De 'true' voor isFromRemoteUpdate zorgt ervoor dat de LastModifiedUtc van incomingSettings wordt behouden.
+            await SettingsManager.SaveSettingsAsync(CurrentSettings, true);
+            // Het OnSettingsWrittenToDisk event in SettingsManager zal nu
+            // PublishCurrentSettingsToMqttAsync aanroepen met de *definitieve* staat.
+
+            // 4. Dispatch UI updates naar de UI thread
+            if (MainWindow?.DispatcherQueue != null)
+            {
+                MainWindow.DispatcherQueue.TryEnqueue(async () =>
+                {
+                    App.Logger?.Debug("App: Now on UI thread. Attempting to refresh active page UI after remote settings update.");
+                    // Logica om de UI te verversen (vergelijkbaar met wat je had in OnRemoteSettingsUpdated)
+                    // Dit is belangrijk als de pagina al geladen is en moet reageren op de nieuwe settings.
+                    if (oldEffectiveSettings?.BackgroundImagePath != CurrentSettings.BackgroundImagePath ||
+                        oldEffectiveSettings?.UiMainPageTitleText != CurrentSettings.UiMainPageTitleText /* etc. voor andere UI-gebonden settings */)
+                    {
+                        await PreloadBackgroundImageAsync(); // Preload opnieuw als pad is gewijzigd
+                    }
+
+                    try
+                    {
+                        if (MainWindow.Content is Frame rootFrame)
+                        {
+                            if (rootFrame.Content is MainPage mainPageInstance)
+                            {
+                                mainPageInstance.LoadDynamicUITexts();
+                                await mainPageInstance.LoadPageBackgroundAsync();
+                            }
+                            else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                            {
+                                // Roep methoden aan op photoBoothPageInstance om UI te vernieuwen
+                                // photoBoothPageInstance.LoadConfigurableTexts(); // Als je zo'n methode hebt
+                                // await photoBoothPageInstance.LoadPageBackgroundAsync(); // Als je zo'n methode hebt
+                            }
+                        }
+                    }
+                    catch (Exception uiEx)
+                    {
+                        App.Logger?.Error(uiEx, "App: Exception occurred during UI refresh on UI thread from ProcessAndApplyRemoteSettingsAsync.");
+                    }
+                });
             }
         }
+
         private static async Task<string> DownloadAndSaveImageAsync(string imageUrl, string expectedHash, string localFileNameSeed)
         {
 

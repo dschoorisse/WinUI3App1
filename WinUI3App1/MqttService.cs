@@ -23,7 +23,8 @@ namespace WinUI3App1
         private readonly string _photoboothId; // Store the ID
 
         // Remote settings updates
-        public event EventHandler SettingsUpdatedRemotely;
+        //public event EventHandler SettingsUpdatedRemotely;
+        public event Func<PhotoBoothSettings, Task> ApplyRemoteSettingsAsync; // Func<T, Task> voor async event handler
         private string _remoteSettingsSetTopic = ""; // Will be initialized with PhotoboothIdentifier
 
         public event EventHandler<bool>? ConnectionStatusChanged;
@@ -215,43 +216,31 @@ namespace WinUI3App1
 
                 if (remoteSettings == null)
                 {
-                    _logger.Error("MQTT: Failed to deserialize remote settings payload.", _photoboothId);
+                    _logger.Error("MQTT: Failed to deserialize remote settings payload for Photobooth ID {PhotoboothId}.", _photoboothId);
                     return;
                 }
-                // Ensure remoteSettings has a valid timestamp; if not, could ignore or assign DateTime.MinValue
-                // but our model constructor should give it one if the JSON field was missing.
+                _logger.Debug("MQTT: Deserialized remote settings for Photobooth ID {PhotoboothId}. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
 
-                _logger.Debug("MQTT: Deserialized remote settings. Remote Timestamp: {RemoteTimestamp}", _photoboothId, remoteSettings.LastModifiedUtc);
-
-                PhotoBoothSettings localSettings = await SettingsManager.LoadSettingsAsync();
-                if (localSettings == null)
+                // Roep het nieuwe event aan en geef de remoteSettings door
+                if (ApplyRemoteSettingsAsync != null)
                 {
-                    _logger.Error("MQTT: Critical - Failed to load local settings for comparison.", _photoboothId);
-                    return; // Or handle more gracefully
-                }
-                _logger.Debug("MQTT: Loaded local settings for comparison. Local Timestamp: {LocalTimestamp}", _photoboothId, localSettings.LastModifiedUtc);
-
-
-                if (remoteSettings.LastModifiedUtc > localSettings.LastModifiedUtc)
-                {
-                    _logger.Information("MQTT: Remote settings are newer. Applying and saving.", _photoboothId);
-                    await SettingsManager.SaveSettingsAsync(remoteSettings, true); // true to preserve remote timestamp
-
-                    SettingsUpdatedRemotely?.Invoke(this, EventArgs.Empty); // Notify app
+                    // De PhotoboothId en LastModifiedUtc in remoteSettings zijn leidend vanuit de MQTT boodschap.
+                    // De App-laag zal deze verwerken.
+                    _logger.Information("MQTT: Passing deserialized remote settings to App for processing and application for Photobooth ID {PhotoboothId}.", _photoboothId);
+                    await ApplyRemoteSettingsAsync.Invoke(remoteSettings);
                 }
                 else
                 {
-                    _logger.Warning("MQTT: Remote settings (Timestamp: {RemoteTimestamp}) are not newer than local (Timestamp: {LocalTimestamp}). No update applied.",
-                        _photoboothId, remoteSettings.LastModifiedUtc, localSettings.LastModifiedUtc);
+                    _logger.Warning("MQTT: No handler registered for ApplyRemoteSettingsAsync. Remote settings for Photobooth ID {PhotoboothId} will not be applied.", _photoboothId);
                 }
             }
             catch (JsonException jsonEx)
             {
-                _logger.Error(jsonEx, "MQTT: JSON Deserialization error for remote settings.", _photoboothId);
+                _logger.Error(jsonEx, "MQTT: JSON Deserialization error for remote settings for Photobooth ID {PhotoboothId}.", _photoboothId);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "MQTT: Error processing remote settings update.", _photoboothId);
+                _logger.Error(ex, "MQTT: Error processing remote settings update for Photobooth ID {PhotoboothId}.", _photoboothId);
             }
         }
 
