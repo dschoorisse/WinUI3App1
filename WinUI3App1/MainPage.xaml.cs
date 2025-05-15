@@ -36,6 +36,8 @@ namespace WinUI3App
         // Keyboard shortcuts
         private KeyboardAccelerator settingsKeyboardAccelerator;
 
+        // Settings managment
+
         private ImageBrush backgroundBrush;
 
         public MainPage()
@@ -58,9 +60,20 @@ namespace WinUI3App
             App.Logger?.Information("MainPage: Page Loaded.");
             this.Focus(FocusState.Programmatic);
 
-            // Load dynamic texts and background image now that elements are ready
+            // Check if lastest settings are loadeds
+            if ((App.lastPreloadBackgroundUtc == DateTime.MinValue ) || 
+                (App.CurrentSettings.LastModifiedUtc > App.lastPreloadBackgroundUtc))
+            {
+                App.Logger?.Information("MainPage: Newer settings detected than loading before. Will reload some settings!");
+
+                // Load dynamic texts and background image now that elements are ready
+                await App.PreloadBackgroundImageAsync();
+            }
+
+
             LoadDynamicUITexts();
             await LoadPageBackgroundAsync();
+
 
             // Transition in the content if it was initially hidden for a smooth load
             // Assuming your root content Grid in MainPage.xaml is named "RootContentGrid" and starts with Opacity="0"
@@ -86,6 +99,8 @@ namespace WinUI3App
             {
                 App.Logger?.Warning("MainPage: RootContentGrid not found for fade-in animation.");
             }
+
+            App.lastPreloadBackgroundUtc = App.CurrentSettings.LastModifiedUtc;
 
             // Set final state after loading and initial animations
             App.State = App.PhotoBoothState.Idle;
@@ -179,7 +194,7 @@ namespace WinUI3App
             }
         }
 
-        // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
+        // Applies the already preloaded background image
         public async Task LoadPageBackgroundAsync() 
         {
             App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);

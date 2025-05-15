@@ -28,9 +28,9 @@ namespace WinUI3App1
         public static MqttService MqttServiceInstance { get; private set; }
         public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
 
-        // These will be populated from PhotoBoothSettings loaded via SettingsManager
+        // Settings management
         public static string PhotoboothIdentifier { get; private set; }
-        public static PhotoBoothSettings CurrentSettings { get; private set; } // Expose loaded settings
+        public static PhotoBoothSettings CurrentSettings { get; set; } // Expose loaded settings
 
         // Heartbeat timer MQTT
         private static Timer _heartbeatTimerMqtt; 
@@ -44,7 +44,9 @@ namespace WinUI3App1
         private static PhotoBoothState _state = PhotoBoothState.Idle; // will be used to track the current state of the app, updates will automatically trigger MQTT status updates
 
         // Background image preloading
+        public static DateTime lastPreloadBackgroundUtc { get; set; }
         public static BitmapImage PreloadedBackgroundImage { get; private set; }
+
 
 
 
@@ -59,6 +61,8 @@ namespace WinUI3App1
         /// Application entry point
         protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
+            //LastSettingsChange = DateTime.Now;
+
             // 1. Load settings FIRST - these are needed for logger and other initializations
             try
             {
@@ -811,6 +815,8 @@ namespace WinUI3App1
                 CurrentSettings = newSettings;
                 Logger?.Information("App: App.CurrentSettings has been updated programmatically.");
 
+                //LastSettingsChange = DateTime.Now;
+
                 // Optionally, if PhotoboothIdentifier could change via SettingsPage (unlikely for now), re-validate it here.
                 // string oldId = PhotoboothIdentifier;
                 // PhotoboothIdentifier = CurrentSettings.PhotoboothId;
@@ -822,7 +828,7 @@ namespace WinUI3App1
             }
         }
 
-        private static async Task PreloadBackgroundImageAsync()
+        public static async Task PreloadBackgroundImageAsync()
         {
             Logger?.Debug($"Preloading background images");
 
