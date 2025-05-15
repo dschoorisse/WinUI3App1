@@ -115,7 +115,7 @@ namespace WinUI3App1
                 {
                     MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
                     MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
-                    MqttServiceInstance.ApplyRemoteSettingsAsync += ProcessAndApplyRemoteSettingsAsync; // VOEG DEZE REGEL TOE
+                    MqttServiceInstance.ApplyRemoteSettingsAsync += ProcessAndApplyRemoteSettingsAsync; 
                     Logger.Debug("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
                 }
                 else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
@@ -482,8 +482,14 @@ namespace WinUI3App1
                     // Download gelukt
                     App.Logger?.Information("App: Background image downloaded successfully to: {Path}", downloadedPath);
                     newLocalBackgroundImagePath = downloadedPath;
-                    incomingSettings.LastSuccessfullyDownloadedImageUrl = incomingSettings.RemoteBackgroundImageUrl;
-                    incomingSettings.LastSuccessfullyDownloadedImageHash = incomingSettings.RemoteBackgroundImageHash;
+                    incomingSettings.LastSuccessfullyDownloadedImageUrl = incomingSettings.RemoteBackgroundImageUrl; // Houd deze vast voor eventuele latere vergelijking
+                    incomingSettings.LastSuccessfullyDownloadedImageHash = incomingSettings.RemoteBackgroundImageHash; // Houd deze vast
+
+                    // WIS RemoteBackgroundImageUrl en RemoteBackgroundImageHash NU ze succesvol verwerkt zijn.
+                    App.Logger?.Information("App: Clearing RemoteBackgroundImageUrl and RemoteBackgroundImageHash from settings object as download was successful and path is now local.");
+                    incomingSettings.RemoteBackgroundImageUrl = "";
+                    incomingSettings.RemoteBackgroundImageHash = "";
+                    // De requiresSave wordt hieronder al getriggerd door de wijziging in BackgroundImagePath
                 }
                 else
                 {
@@ -497,12 +503,25 @@ namespace WinUI3App1
                     newLocalBackgroundImagePath = ""; // Geen geldig nieuw lokaal pad
                     incomingSettings.LastSuccessfullyDownloadedImageUrl = ""; // Mislukte download
                     incomingSettings.LastSuccessfullyDownloadedImageHash = "";
+
+                    // TODO: maybe create a MQTT topic to publish responses to commands?
                 }
                 // Update BackgroundImagePath in het object dat we gaan opslaan
                 if (incomingSettings.BackgroundImagePath != newLocalBackgroundImagePath)
                 {
                     incomingSettings.BackgroundImagePath = newLocalBackgroundImagePath;
                     requiresSave = true; // Markeer dat er een wijziging is die opslag vereist
+                }
+
+                // Zorg ervoor dat 'requiresSave' ook true is als RemoteBackgroundImageUrl of RemoteBackgroundImageHash gewijzigd (gewist) is.
+                // Dit gebeurt impliciet als ze onderdeel zijn van het 'incomingSettings' object dat vergeleken wordt
+                // of expliciet als we de 'requiresSave' vlag hier zetten.
+                // Omdat we incomingSettings direct aanpassen, zal de SaveSettingsAsync de gewijzigde (gewiste) URLs opslaan.
+                if (string.IsNullOrEmpty(incomingSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageUrl))
+                {
+                    // Dit dekt het geval dat de RemoteBackgroundImageUrl is gewist (omdat download succesvol was)
+                    // terwijl LastSuccessfullyDownloadedImageUrl nog wel de oude URL bevatte.
+                    requiresSave = true;
                 }
             }
             else // Geen RemoteBackgroundImageUrl opgegeven
