@@ -18,7 +18,12 @@ using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using Microsoft.UI.Xaml.Media.Imaging;
 
-// Ensure this namespace matches your project, e.g., WinUI3App1
+
+using MQTTnet.Protocol;
+using System.Text.Json;
+using Windows.Storage.Streams;
+using Microsoft.UI.Dispatching;
+
 namespace WinUI3App1
 {
     public partial class App : Application
@@ -26,130 +31,137 @@ namespace WinUI3App1
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
         public static MqttService MqttServiceInstance { get; private set; }
-        public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
+        public static string CurrentPageName { get; private set; } = "Initializing";
 
-        // These will be populated from PhotoBoothSettings loaded via SettingsManager
         public static string PhotoboothIdentifier { get; private set; }
-        public static PhotoBoothSettings CurrentSettings { get; private set; } // Expose loaded settings
-
-        // Heartbeat timer MQTT
-        private static Timer _heartbeatTimerMqtt; 
-        private static readonly TimeSpan HeartbeatIntervalMqtt = TimeSpan.FromSeconds(10); // Configurable interval
-
-        // Heartbeat timer text logging
-        private static Timer _heartbeatTimerLogging;
-        private static readonly TimeSpan HeartbeatIntervalLogging = TimeSpan.FromSeconds(300); // Configurable interval
-
-        // Global state
-        private static PhotoBoothState _state = PhotoBoothState.Idle; // will be used to track the current state of the app, updates will automatically trigger MQTT status updates
-
-        // Background image preloading
         public static BitmapImage PreloadedBackgroundImage { get; private set; }
 
+        private static Timer _heartbeatTimerMqtt;
+        private static readonly TimeSpan HeartbeatIntervalMqtt = TimeSpan.FromSeconds(10);
+        private static Timer _heartbeatTimerLogging;
+        private static readonly TimeSpan HeartbeatIntervalLogging = TimeSpan.FromSeconds(300);
+        private static PhotoBoothState _state = PhotoBoothState.Idle;
 
+        private static PhotoBoothSettings _currentSettings;
+        public static PhotoBoothSettings CurrentSettings
+        {
+            get => _currentSettings;
+            set
+            {
+                PhotoBoothSettings oldSettings = _currentSettings;
+                _currentSettings = value;
+
+                if (_currentSettings == null)
+                {
+                    Logger?.Warning("App.CurrentSettings was set to null. No further processing.");
+                    PreloadedBackgroundImage = null;
+                    NotifyActivePageToRefreshBackground();
+                    return;
+                }
+
+                Logger?.Information("App.CurrentSettings has been updated. Old Path: '{OldPath}', New Path: '{NewPath}'",
+                                    oldSettings?.BackgroundImagePath,
+                                    _currentSettings.BackgroundImagePath);
+
+                // Check if background image related settings have changed
+                bool backgroundPotentiallyChanged = oldSettings == null ||
+                                                    oldSettings.BackgroundImagePath != _currentSettings.BackgroundImagePath ||
+                                                    oldSettings.RemoteBackgroundImageUrl != _currentSettings.RemoteBackgroundImageUrl ||
+                                                    oldSettings.RemoteBackgroundImageHash != _currentSettings.RemoteBackgroundImageHash;
+
+                if (backgroundPotentiallyChanged)
+                {
+                    Logger?.Debug("App.CurrentSettings: Background related settings changed or initial load. Triggering background processing.");
+                    // Offload the initiation of preload and notification to ensure setter remains quick
+                    // The PreloadBackgroundImageAsync itself will handle dispatching its core UI work.
+                    _ = Task.Run(async () =>
+                    {
+                        // Note: The download logic (if remote URL is used) is handled in OnRemoteSettingsUpdated
+                        // before this setter is called. This setter primarily reacts to the final BackgroundImagePath.
+                        await PreloadBackgroundImageAsync(); // This method now internally dispatches to UI thread for UI work
+                        NotifyActivePageToRefreshBackground(); // This method also dispatches to UI thread
+                    });
+                }
+            }
+        }
 
         public App()
         {
             this.InitializeComponent();
-
-            // Settings-dependent initializations are moved to OnLaunched after settings are loaded
-            // to allow for async loading of settings.
         }
 
-        /// Application entry point
         protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            // 1. Load settings FIRST - these are needed for logger and other initializations
+            PhotoBoothSettings initialSettings = null;
             try
             {
-                CurrentSettings = await SettingsManager.LoadSettingsAsync();
-                if (CurrentSettings == null)
+                initialSettings = await SettingsManager.LoadSettingsAsync();
+                if (initialSettings == null)
                 {
-                    // This case should ideally be handled by SettingsManager returning defaults
-                    CurrentSettings = new PhotoBoothSettings(); // Emergency fallback
-                    // Log this critical failure if possible with a pre-logger or Debug.WriteLine
-                    System.Diagnostics.Debug.WriteLine("CRITICAL: Failed to load settings, CurrentSettings was null even after LoadSettingsAsync. Using emergency defaults.");
-                    await SettingsManager.SaveSettingsAsync(CurrentSettings); // Attempt to save defaults
+                    System.Diagnostics.Debug.WriteLine("CRITICAL: Failed to load settings, SettingsManager returned null. Using emergency defaults.");
+                    initialSettings = new PhotoBoothSettings();
+                    await SettingsManager.SaveSettingsAsync(initialSettings);
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"CRITICAL: Exception loading settings: {ex.Message}. Using emergency defaults.");
-                CurrentSettings = new PhotoBoothSettings(); // Emergency fallback
+                initialSettings = new PhotoBoothSettings();
             }
 
-            // 2. Initialize PhotoboothIdentifier from loaded settings (needed for log topic)
-            PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+            // Assign to _currentSettings directly first to avoid setter logic during initial load here.
+            _currentSettings = initialSettings;
+            PhotoboothIdentifier = _currentSettings.PhotoboothId; // Initialize before logger
+
             if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) ||
                 PhotoboothIdentifier.Contains("/") || PhotoboothIdentifier.Contains("+") || PhotoboothIdentifier.Contains("#"))
             {
                 string oldId = PhotoboothIdentifier;
-                PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
-                // Cannot use App.Logger here yet as it's not initialized. Use Debug.WriteLine or queue log.
+                PhotoboothIdentifier = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
                 System.Diagnostics.Debug.WriteLine($"WARN: Invalid PhotoboothId ('{oldId}') in settings, using default: {PhotoboothIdentifier}");
-                CurrentSettings.PhotoboothId = PhotoboothIdentifier;
-                await SettingsManager.SaveSettingsAsync(CurrentSettings); // Save corrected ID
+                _currentSettings.PhotoboothId = PhotoboothIdentifier; // Update the in-memory object
+                await SettingsManager.SaveSettingsAsync(_currentSettings); // Save corrected ID
             }
 
-            // 3. Now configure logging (Logger will be assigned here)
-            ConfigureLogging(); // This will now have access to CurrentSettings and PhotoboothIdentifier
+            ConfigureLogging();
+            Logger.Information("Application launching... Initial settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
 
-            Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
-
-            // 4. Preload background image if specified
-            await PreloadBackgroundImageAsync();
-
-
-            // 4. Initialize MQTT Service (for commands, status, etc.)
-            string mqttBroker = CurrentSettings.MqttBrokerAddress;
-            int mqttPort = CurrentSettings.MqttBrokerPort;
-            string mqttUser = CurrentSettings.MqttUsername;
-            string mqttPassword = CurrentSettings.MqttPassword;
-            try
-            {
-                if (!string.IsNullOrEmpty(mqttBroker) && mqttPort > 0)
-                {
-                    MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
-                    MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
-                    MqttServiceInstance.SettingsUpdatedRemotely += OnRemoteSettingsUpdated;
-                    Logger.Debug("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
-                }
-                else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
-            }
-            catch (Exception ex) { Logger.Error(ex, "Failed to initialize MQTT Service."); }
-
-            // 5. Main window creation and Fullscreen Logic ---
-            MainWindow = new MainWindow();
+            // Create MainWindow
+            MainWindow = new MainWindow(); // MainWindow constructor navigates to initial page
             Logger.Debug("Main window created");
 
-            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name, TODO: create list and populoate from JSON
+            // Activate the main window to ensure its content (and initial page) loads and DispatcherQueue is active
+            MainWindow.Activate();
+            Logger.Debug("Main window activated");
+
+            // Now that MainWindow is created and activated, its DispatcherQueue is available.
+            // Preload the background image. OnLaunched is on the UI thread.
+            await PreloadBackgroundImageAsync();
+            Logger.Debug("App.OnLaunched: After PreloadBackgroundImageAsync, App.PreloadedBackgroundImage is {Status}", App.PreloadedBackgroundImage == null ? "NULL" : "SET");
+
+            // Explicitly notify the now-active page to refresh its background with the preloaded image.
+            // This ensures that if the page loaded before PreloadBackgroundImageAsync completed, it still gets updated.
+            NotifyActivePageToRefreshBackground();
+
+
+            // Fullscreen Logic
+            const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // TODO: Make this configurable
             string currentComputerName = Environment.MachineName;
             Logger.Debug("Current computer name: {ComputerName}. Target for fullscreen: {TargetComputerName}", currentComputerName, targetPhotoboothComputerName);
 
-            // 6. Setup Navigation Tracking and Initial Page State for MQTT
-            if (App.MainWindow is MainWindow mwInstance && mwInstance.AppFrame != null)
+            if (MainWindow.Content is Frame appFrame)
             {
-                // Get initial page name after MainWindow constructor has navigated
-                if (mwInstance.AppFrame.Content is Page initialPage)
-                {
-                    CurrentPageName = initialPage.GetType().Name;
-                }
-                // Fallback if Content is not yet a Page (less likely here)
-                else
-                {
-                    CurrentPageName = mwInstance.AppFrame.SourcePageType?.Name ?? "MainPage";
-                }
-                Logger.Debug("App: Initial page detected: {CurrentPageName}", CurrentPageName);
-
-                // Subscribe for subsequent navigations
-                mwInstance.AppFrame.Navigated += RootFrame_Navigated;
+                // This might be slightly early if navigation hasn't fully completed,
+                // but CurrentPageName is mostly for logging/status.
+                // The RootFrame_Navigated handler will update it more reliably.
+                if (appFrame.Content is Page initialPage) CurrentPageName = initialPage.GetType().Name;
+                else CurrentPageName = appFrame.SourcePageType?.Name ?? "MainPage";
+                Logger.Debug("App: Initial page (potentially) detected: {CurrentPageName}", CurrentPageName);
+                appFrame.Navigated += RootFrame_Navigated;
             }
-            else 
-            { 
-                Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events."); 
-            }
+            else Logger.Error("App: Could not find AppFrame in MainWindow to subscribe to navigation events.");
 
-            #region fullscreen or windowed
+
             if (currentComputerName.Equals(targetPhotoboothComputerName, StringComparison.OrdinalIgnoreCase))
             {
                 Logger.Information("Computer name matches. Attempting to set window to fullscreen.");
@@ -165,110 +177,65 @@ namespace WinUI3App1
                             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
                             Logger.Information("Fullscreen mode has been set.");
                         }
-                        else if (appWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen)
-                        {
-                            Logger.Information("Window is already in Fullscreen mode.");
-                        }
-                        else
-                        {
-                            Logger.Warning("Window is currently in {PresenterKind} mode. Fullscreen was not applied.", appWindow.Presenter.Kind);
-                        }
+                        else Logger.Information("Window is already in Fullscreen or a non-Overlapped mode.");
                     }
                     else Logger.Error("Could not retrieve AppWindow. Fullscreen mode cannot be set.");
                 }
-                catch (Exception ex) 
-                { 
-                    Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); 
-                }
+                catch (Exception ex) { Logger.Error(ex, "An error occurred while trying to set fullscreen mode."); }
             }
             else Logger.Information("Computer name does not match. Application will start in default windowed mode.");
-            #endregion
 
-            MainWindow.Activate();
-            Logger.Debug("Main window activated");
-
-            // 7. Start MQTT Service Connection
-            if (MqttServiceInstance != null)
+            // Initialize MQTT Service
+            string mqttBroker = _currentSettings.MqttBrokerAddress;
+            int mqttPort = _currentSettings.MqttBrokerPort;
+            string mqttUser = _currentSettings.MqttUsername;
+            string mqttPassword = _currentSettings.MqttPassword;
+            try
             {
-                try { await MqttServiceInstance.StartAsync(); }
-                catch (Exception ex) { Logger.Error(ex, "MQTT Service failed to start connection on launch for {PhotoboothId}.", PhotoboothIdentifier); }
+                if (!string.IsNullOrEmpty(mqttBroker) && mqttPort > 0)
+                {
+                    MqttServiceInstance = new MqttService(Logger, PhotoboothIdentifier, mqttBroker, mqttPort, mqttUser, mqttPassword);
+                    MqttServiceInstance.ConnectionStatusChanged += MqttService_ConnectionStatusChanged;
+                    MqttServiceInstance.SettingsUpdatedRemotely += OnRemoteSettingsUpdated;
+                    Logger.Debug("MQTT Service instance created for Photobooth ID {PhotoboothId}.", PhotoboothIdentifier);
+                    _ = MqttServiceInstance.StartAsync(); // Fire and forget, StartAsync handles retries
+                }
+                else { Logger.Error("MQTT configuration missing in settings. MQTT Service not started."); }
             }
+            catch (Exception ex) { Logger.Error(ex, "Failed to initialize MQTT Service."); }
 
-            // Send status over MQTT
-            State = PhotoBoothState.Starting;
 
-            // 8. Setup other app-level handlers
+            State = PhotoBoothState.Starting; // Initial state
             MainWindow.Closed += OnMainWindowClosed;
             this.UnhandledException += App_UnhandledException;
+            SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler;
+
+            // Initialize heartbeat timers
+            _heartbeatTimerMqtt = new Timer(LogHeartbeatMqtt, null, TimeSpan.Zero, HeartbeatIntervalMqtt);
+            _heartbeatTimerLogging = new Timer(LogHeartbeatLogging, null, TimeSpan.Zero, HeartbeatIntervalLogging);
+            Logger.Verbose("Application Heartbeat timers started.");
+
             Logger.Information("Application initialization complete.");
-
-            this.UnhandledException += App_UnhandledException;
-            Logger.Information("Application initialized and launched.");
-
-            // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
-            SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
-                       
-            #region Setup heartbeat timers
-            // MQTT
-            try
-            {
-                // Start the timer. First heartbeat after 'HeartbeatIntervalMqtt', then repeat at 'HeartbeatIntervalMqtt'.
-                // If you want an immediate first heartbeat for testing, set the dueTime to TimeSpan.Zero or a small value.
-                _heartbeatTimerMqtt = new Timer(
-                    callback: LogHeartbeatMqtt,
-                    state: null,             // No state object needed for the callback
-                    dueTime: TimeSpan.Zero,  // Time to wait before the first tick, immediately 
-                    period: HeartbeatIntervalMqtt); // Interval between subsequent ticks
-
-                Logger.Verbose("Application MQTT Heartbeat logging timer started. Interval: {HeartbeatIntervalMqtt}", HeartbeatIntervalMqtt);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
-            }
-
-            // Text logs
-            try
-            {
-                // Start the timer. First heartbeat after 'HeartbeatIntervalMqtt', then repeat at 'HeartbeatIntervalMqtt'.
-                // If you want an immediate first heartbeat for testing, set the dueTime to TimeSpan.Zero or a small value.
-                _heartbeatTimerLogging = new Timer(
-                    callback: LogHeartbeatLogging,
-                    state: null,             // No state object needed for the callback
-                    dueTime: TimeSpan.Zero,  // Time to wait before the first tick, immediately 
-                    period: HeartbeatIntervalLogging); // Interval between subsequent ticks
-
-                Logger.Verbose("Application Logging Heartbeat logging timer started. Interval: {HeartbeatIntervalLogging}", HeartbeatIntervalLogging);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
-            }
-
-            #endregion
         }
 
         private static async void RootFrame_Navigated(object sender, NavigationEventArgs e)
         {
-            string newPageName = "Unknown";
-            if (e.Content is Page page) // Get name from the actual Page instance
-            {
-                newPageName = page.GetType().Name;
-            }
-            else if (e.SourcePageType != null) // Fallback to the type used for navigation
-            {
-                newPageName = e.SourcePageType.Name;
-            }
-
-            // Log only if the page name has changed to avoid excessive logging
+            string newPageName = (e.Content as Page)?.GetType().Name ?? e.SourcePageType?.Name ?? "Unknown";
             if (CurrentPageName != newPageName)
             {
                 string previousPageName = CurrentPageName;
                 CurrentPageName = newPageName;
                 Logger?.Information("App: Navigated from {PreviousPageName} to {CurrentPageName}", previousPageName, CurrentPageName);
 
-                // Trigger an MQTT status update to reflect the new page
-                // Using a generic "active" state; specific page actions might set more detailed states.
+                // When navigation completes, if it's the initial page load, ensure background is applied.
+                // This helps if PreloadBackgroundImageAsync finishes before the page's own Loaded event.
+                // We can check if PreloadedBackgroundImage is set and tell the new page to use it.
+                // The page's LoadPageBackgroundAsync or RefreshBackgroundDisplay should handle this.
+                if (e.NavigationMode == NavigationMode.New) // Or check specific page types
+                {
+                    NotifyActivePageToRefreshBackground();
+                }
+
                 if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
                 {
                     await PublishPhotoBoothStatusJsonAsync();
@@ -276,46 +243,29 @@ namespace WinUI3App1
             }
         }
 
-        private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
+        private async void MqttService_ConnectionStatusChanged(object sender, bool isConnected)
         {
             if (isConnected)
             {
-                Logger.Information("MQTT: Connected. Publishing initial 'Online' status.", PhotoboothIdentifier);
-                await PublishConnectionStatusAsync("online"); // Retain online status
-
-                // Now that MQTT is connected and initial "online" is sent,
-                // publish the full current settings to the /settings/current_state topic.
-                Logger.Information("MQTT: Connection established, now publishing full current settings for {PhotoboothId}.", PhotoboothIdentifier);
-                await PublishCurrentSettingsToMqttAsync(CurrentSettings); 
+                Logger.Information("MQTT: Connected. Publishing initial 'Online' status for {PhotoboothId}.", PhotoboothIdentifier);
+                await PublishConnectionStatusAsync("online");
+                await PublishCurrentSettingsToMqttAsync(CurrentSettings); // Publish current state after connecting
             }
-            else
-            {
-                Logger.Information("MQTT: Disconnected.", PhotoboothIdentifier);
-            }
+            else Logger.Information("MQTT: Disconnected for {PhotoboothId}.", PhotoboothIdentifier);
         }
 
         public static async Task PublishConnectionStatusAsync(string statusPayload)
         {
-            // The connection status should be retained to ensure that the last known status is available
-            // in case of a client shutdown. 
-            bool retain = true; 
-
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
             {
                 string topic = $"photobooth/{PhotoboothIdentifier}/connection";
                 try
                 {
-                    await MqttServiceInstance.PublishAsync(topic, statusPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain);
+                    await MqttServiceInstance.PublishAsync(topic, statusPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, true);
                 }
-                catch (Exception ex)
-                {
-                    Logger?.Error(ex, "MQTT: Failed to publish status '{Status}' to topic '{Topic}'", PhotoboothIdentifier, statusPayload, topic);
-                }
+                catch (Exception ex) { Logger?.Error(ex, "MQTT: Failed to publish status '{Status}' to topic '{Topic}' for {PhotoboothId}", statusPayload, topic, PhotoboothIdentifier); }
             }
-            else
-            {
-                Logger?.Warning("MQTT: Not connected. Cannot publish status '{Status}'", PhotoboothIdentifier, statusPayload);
-            }
+            else Logger?.Warning("MQTT: Not connected. Cannot publish status '{Status}' for {PhotoboothId}", statusPayload, PhotoboothIdentifier);
         }
 
         public static async Task PublishPhotoBoothStatusJsonAsync()
@@ -328,86 +278,53 @@ namespace WinUI3App1
                     var statusObject = new
                     {
                         photoboothId = PhotoboothIdentifier,
-                        state = State,
-                        currentPage = CurrentPageName, // Include current page name
+                        state = State.ToString(), // Send enum as string
+                        currentPage = CurrentPageName,
                         timestamp = DateTime.UtcNow.ToString("o"),
-                        cameraConnected = false, // Placeholder, replace with actual camera status
+                        cameraConnected = false, // Placeholder
                     };
-
-                    // Add JsonSerializerOptions with Enum Converter
-                    // In order to send enum values as strings instead of integers.
-                    var serializerOptions = new System.Text.Json.JsonSerializerOptions
-                    {
-                        WriteIndented = true, // Optional: for readable JSON in MQTT
-                        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, // Keeps JSON clean
-                        Converters = { new JsonStringEnumConverter() } 
-                    };
-
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(statusObject, serializerOptions);
-
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, retain: false);
+                    var serializerOptions = new JsonSerializerOptions { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+                    string jsonPayload = JsonSerializer.Serialize(statusObject, serializerOptions);
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, false);
                 }
-                catch (Exception ex)
-                {
-                    Logger?.Error($"MQTT: Failed to publish JSON status '{State}' to topic '{topic}'. Exception: {ex}");
-                }
+                catch (Exception ex) { Logger?.Error(ex, "MQTT: Failed to publish JSON status '{State}' to topic '{Topic}' for {PhotoboothId}", State, topic, PhotoboothIdentifier); }
             }
-            else
-            {
-                Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier);
-            }
+            else Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}' for {PhotoboothId}", State, PhotoboothIdentifier);
         }
 
         private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
         {
-            Logger.Fatal(e.Exception, "Unhandled application exception. Attempting to handle.");
-            e.Handled = true;
-            // Consider showing a dialog to the user here if it's a UI thread exception
-            // and then perhaps gracefully shutting down or attempting recovery.
+            Logger?.Fatal(e.Exception, "Unhandled application exception for {PhotoboothId}. Attempting to handle.", PhotoboothIdentifier);
+            e.Handled = true; // Prevent app crash
         }
 
         private void ConfigureLogging()
         {
             string localAppDataPath;
-            try
+            try { localAppDataPath = ApplicationData.Current.LocalFolder.Path; }
+            catch (Exception ex)
             {
-                // This is the standard and preferred way
-                localAppDataPath = ApplicationData.Current.LocalFolder.Path;
-            }
-            catch (Exception ex) // InvalidOperationException can occur if LocalFolder is not accessible (e.g., certain contexts for unpackaged apps very early)
-            {
-                App.Logger?.Error(ex, "ConfigureLogging: Could not access ApplicationData.Current.LocalFolder.Path. Falling back to AppContext.BaseDirectory for logs path.");
-                // Fallback path, be mindful of write permissions if app is installed in Program Files
+                System.Diagnostics.Debug.WriteLine($"Error getting LocalFolder path for logs: {ex.Message}. Falling back to BaseDirectory.");
                 localAppDataPath = AppContext.BaseDirectory;
             }
-
-            string logsDirectory = Path.Combine(localAppDataPath, "Logs"); // New base path
-
+            string logsDirectory = Path.Combine(localAppDataPath, "Logs");
             if (!Directory.Exists(logsDirectory)) Directory.CreateDirectory(logsDirectory);
 
             var loggerConfiguration = new LoggerConfiguration()
-                .MinimumLevel.Debug() // Overall minimum level for logs processed by Serilog
+                .MinimumLevel.Debug()
                 .Enrich.FromLogContext()
-                .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier ?? "UnknownID_AtLoggingConfig") // Use PhotoboothIdentifier if available
-                .Enrich.WithProperty("Application", "PhotoBoothApp");
-
-            // --- File Sink with Compact JSON Format ---
-            try
-            {
-                loggerConfiguration.WriteTo.File(
-                    formatter: new RenderedCompactJsonFormatter(), // Use the compact JSON formatter
-                    path: Path.Combine(logsDirectory, "photobooth-log-.ndjson"), // Suggest .ndjson or .json.log extension
+                .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier ?? "UnknownID_AtLogConfig")
+                .Enrich.WithProperty("Application", "PhotoBoothApp")
+                .WriteTo.File(
+                    formatter: new Serilog.Formatting.Compact.RenderedCompactJsonFormatter(),
+                    path: Path.Combine(logsDirectory, "photobooth-log-.ndjson"),
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 7);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"ERROR: Failed to configure File sink: {ex.Message}");
-            }
 
-            // --- Debug Sink (remains the same) ---
-            // TODO: change this so that only warnings are logged to the console
-            //loggerConfiguration.WriteTo.Debug(); // Standard Visual Studio debug output (usually text-based)
+            // Optionally add Debug sink if needed during development
+            // #if DEBUG
+            // loggerConfiguration.WriteTo.Debug();
+            // #endif
 
             Logger = loggerConfiguration.CreateLogger();
             Log.Logger = Logger; // Assign to Serilog's global static logger
@@ -415,203 +332,117 @@ namespace WinUI3App1
 
         private async void OnMainWindowClosed(object sender, WindowEventArgs args)
         {
-            Logger.Information("Main window closing. Disposing MQTT Service...", PhotoboothIdentifier);
-
-            // --- Dispose Heartbeat Timer ---
-            if (_heartbeatTimerMqtt != null)
-            {
-                try
-                {
-                    // Dispose the timer and wait for any queued callbacks to complete
-                    // (or use Dispose(WaitHandle) for more control if needed, but simple Dispose is usually fine).
-                    _heartbeatTimerMqtt.Dispose();
-                    _heartbeatTimerMqtt = null; // Nullify to prevent reuse
-                    Logger.Information("Heartbeat timer disposed successfully.");
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warning(ex, "Exception while disposing heartbeat timer.");
-                }
-            }
-            // --- End of Heartbeat Timer Disposal ---
-
-            // --- Dispose MQTT Service ---
+            Logger?.Information("Main window closing for {PhotoboothId}. Disposing resources...", PhotoboothIdentifier);
+            _heartbeatTimerMqtt?.Dispose();
+            _heartbeatTimerLogging?.Dispose();
             if (MqttServiceInstance != null)
             {
                 MqttServiceInstance.ConnectionStatusChanged -= MqttService_ConnectionStatusChanged;
                 MqttServiceInstance.SettingsUpdatedRemotely -= OnRemoteSettingsUpdated;
                 await MqttServiceInstance.DisposeAsync();
-                Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
+                Logger?.Information("MQTT Service disposed for {PhotoboothId}.", PhotoboothIdentifier);
             }
-            // --- End of MQTT Service Disposal ---
-
-            // --- Flush logs and close application ---
-            Logger.Information("Flushing logs and closing application.");
+            SettingsManager.OnSettingsWrittenToDisk -= App_OnSettingsWrittenToDisk_Handler;
+            Logger?.Information("Flushing logs and closing application for {PhotoboothId}.", PhotoboothIdentifier);
             await Log.CloseAndFlushAsync();
-
-
         }
 
         private async void OnRemoteSettingsUpdated(object sender, EventArgs e)
         {
             App.Logger?.Information("App: Event received - Remote settings have been updated. Attempting to reload and apply.");
-            PhotoBoothSettings newSettings = null;
-            PhotoBoothSettings oldEffectiveSettings = CurrentSettings; // Keep a reference to settings before reload
-
-            try { newSettings = await SettingsManager.LoadSettingsAsync(); }
-            catch (Exception ex) { App.Logger?.Error(ex, "App: Failed to reload settings after remote update. Aborting apply."); return; }
-
-            if (newSettings != null)
+            PhotoBoothSettings newSettingsFromFile = null;
+            try { newSettingsFromFile = await SettingsManager.LoadSettingsAsync(); } // Loads what MqttService saved
+            catch (Exception ex)
             {
-                CurrentSettings = newSettings; // Update App.CurrentSettings to the latest from file (which was just saved by MqttService)
-                                               // ... (PhotoboothIdentifier update logic as before) ...
-                App.Logger?.Information("App: Settings reloaded into App.CurrentSettings. Current Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+                App.Logger?.Error(ex, "App: Failed to reload settings after remote update. Aborting apply.");
+                return;
+            }
 
+            if (newSettingsFromFile == null)
+            {
+                App.Logger?.Error("App: Reloaded settings (newSettingsFromFile) are null after remote update. No changes applied.");
+                return;
+            }
 
-                // --- Handle Background Image Download ---
-                bool backgroundChanged = false;
-                string newLocalBackgroundImagePath = oldEffectiveSettings?.BackgroundImagePath ?? ""; // Start with old path
+            PhotoBoothSettings effectiveSettings = newSettingsFromFile;
+            bool settingsModifiedByDownload = false;
 
-                if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) &&
-                    (CurrentSettings.RemoteBackgroundImageUrl != CurrentSettings.LastSuccessfullyDownloadedImageUrl ||
-                     (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageHash) && CurrentSettings.RemoteBackgroundImageHash != CurrentSettings.LastSuccessfullyDownloadedImageHash) ||
-                     string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath) || // If no local path is set yet
-                     !File.Exists(CurrentSettings.BackgroundImagePath)) // Or if current local file doesn't exist
-                   )
+            // --- Handle Background Image Download if URL/Hash changed or local file is missing ---
+            bool needsDownload = !string.IsNullOrEmpty(effectiveSettings.RemoteBackgroundImageUrl) &&
+                                 (effectiveSettings.RemoteBackgroundImageUrl != effectiveSettings.LastSuccessfullyDownloadedImageUrl ||
+                                  (!string.IsNullOrEmpty(effectiveSettings.RemoteBackgroundImageHash) && effectiveSettings.RemoteBackgroundImageHash != effectiveSettings.LastSuccessfullyDownloadedImageHash) ||
+                                  string.IsNullOrEmpty(effectiveSettings.BackgroundImagePath) ||
+                                  !File.Exists(effectiveSettings.BackgroundImagePath));
+
+            if (needsDownload)
+            {
+                App.Logger?.Information("App (OnRemoteSettingsUpdated): New/updated remote background or missing local. Attempting download.");
+                string downloadedPath = await DownloadAndSaveImageAsync(
+                    effectiveSettings.RemoteBackgroundImageUrl,
+                    effectiveSettings.RemoteBackgroundImageHash,
+                    (effectiveSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString().Substring(0, 8))
+                );
+
+                if (!string.IsNullOrEmpty(downloadedPath))
                 {
-                    App.Logger?.Information("App: New or updated remote background image URL/hash detected, or local file missing. Attempting download.");
-                    string downloadedPath = await DownloadAndSaveImageAsync(
-                        CurrentSettings.RemoteBackgroundImageUrl,
-                        CurrentSettings.RemoteBackgroundImageHash,
-                        // Use hash of URL as part of filename seed if generating unique filenames, or just use fixed name
-                        (CurrentSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString())
-                    );
-
-                    if (!string.IsNullOrEmpty(downloadedPath))
-                    {
-                        newLocalBackgroundImagePath = downloadedPath;
-                        CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath; // Update the path for UI use
-                        CurrentSettings.LastSuccessfullyDownloadedImageUrl = CurrentSettings.RemoteBackgroundImageUrl;
-                        CurrentSettings.LastSuccessfullyDownloadedImageHash = CurrentSettings.RemoteBackgroundImageHash;
-                        backgroundChanged = true;
-                        App.Logger?.Information("App: Background image updated locally to: {Path}", newLocalBackgroundImagePath);
-                    }
-                    else
-                    {
-                        App.Logger?.Warning("App: Failed to download new remote background. Current background (if any) will be kept or cleared if path was invalid.");
-                        // If download fails, decide behavior: keep old BackgroundImagePath or clear it?
-                        // Let's assume if RemoteBackgroundImageUrl was set but download failed, we clear the path to avoid using stale image.
-                        if (!string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl))
-                        {
-                            newLocalBackgroundImagePath = ""; // Clear path on failure if a remote URL was specified
-                            CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
-                            backgroundChanged = true; // Path changed to empty
-                        }
-                    }
-                }
-                else if (string.IsNullOrEmpty(CurrentSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
-                {
-                    // Remote URL was cleared, so local background should also be cleared
-                    App.Logger?.Information("App: RemoteBackgroundImageUrl is empty. Clearing local background image path.");
-                    newLocalBackgroundImagePath = "";
-                    CurrentSettings.BackgroundImagePath = newLocalBackgroundImagePath;
-                    CurrentSettings.LastSuccessfullyDownloadedImageUrl = ""; // Clear tracking too
-                    CurrentSettings.LastSuccessfullyDownloadedImageHash = "";
-                    backgroundChanged = true;
-                }
-
-
-                // If background or other critical settings changed, save CurrentSettings again
-                // The SaveSettingsAsync in MqttService saved what was received from MQTT.
-                // Now we might have updated it further (e.g., BackgroundImagePath, LastSuccessfullyDownloaded info).
-                if (backgroundChanged) // Or any other property modified here after loading from remote
-                {
-                    App.Logger?.Information("App: Settings changed after remote update. Saving updated settings.");
-                    await SettingsManager.SaveSettingsAsync(CurrentSettings, true); // 'true' as this is part of remote update flow, preserve LastModifiedUtc from MQTT push
-                }
-
-                // --- Dispatch UI updates to the UI thread ---
-                if (MainWindow?.DispatcherQueue != null)
-                {
-                    MainWindow.DispatcherQueue.TryEnqueue(async () =>
-                    {
-                        App.Logger?.Debug("App: Now on UI thread. Attempting to refresh active page UI.");
-                        try
-                        {
-                            if (MainWindow.Content is Frame rootFrame) // Ensure 'Frame' is Microsoft.UI.Xaml.Controls.Frame
-                            {
-                                if (rootFrame.Content is MainPage mainPageInstance)
-                                {
-                                    App.Logger?.Debug("App: MainPage is active. Requesting its UI to refresh from newly loaded App.CurrentSettings.");
-                                    // These methods in MainPage.xaml.cs must be public
-
-                                    //TODO: group these calls into a single method in MainPage, something like RefreshUI() or ApplyNewSettings()
-                                    mainPageInstance.LoadDynamicUITexts();
-                                    await mainPageInstance.LoadPageBackgroundAsync();
-
-                                    App.Logger?.Debug("App: MainPage UI refresh calls completed.");
-                                }
-                                else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
-                                {
-                                    App.Logger?.Debug("App: PhotoBoothPage is active. New settings loaded into App.CurrentSettings.");
-                                    // PhotoBoothPage loads its texts/settings in its Page_Loaded or StartPhotoProcedure.
-                                    // If it needs to react to live changes while already active (e.g., for button texts if review screen is shown),
-                                    // it would need a public method like RefreshConfigurableTexts().
-                                    // photoBoothPageInstance.RefreshConfigurableTexts(); // Example call
-                                    // Its background is also loaded on Page_Loaded. A live background change would need similar handling.
-                                    // await photoBoothPageInstance.LoadPageBackgroundAsync(); // If such a public method exists
-                                }
-                                // Add 'else if' for other pages if they need live UI updates from settings
-                            }
-                            else
-                            {
-                                App.Logger?.Warning("App: MainWindow.Content is not a Frame on UI thread. Cannot determine active page to refresh.");
-                            }
-                        }
-                        catch (Exception uiEx)
-                        {
-                            App.Logger?.Error(uiEx, "App: Exception occurred during UI refresh on UI thread from OnRemoteSettingsUpdated.");
-                        }
-                    });
+                    effectiveSettings.BackgroundImagePath = downloadedPath;
+                    effectiveSettings.LastSuccessfullyDownloadedImageUrl = effectiveSettings.RemoteBackgroundImageUrl;
+                    // Assuming DownloadAndSaveImageAsync verifies hash or you trust the source
+                    effectiveSettings.LastSuccessfullyDownloadedImageHash = effectiveSettings.RemoteBackgroundImageHash;
+                    settingsModifiedByDownload = true;
+                    App.Logger?.Information("App (OnRemoteSettingsUpdated): Background image downloaded/updated to: {Path}", downloadedPath);
                 }
                 else
                 {
-                    App.Logger?.Error("App: MainWindow or its DispatcherQueue is null. Cannot dispatch UI updates for remote settings.");
+                    App.Logger?.Warning("App (OnRemoteSettingsUpdated): Failed to download new remote background.");
+                    // Decide if BackgroundImagePath should be cleared or retain old value
+                    // effectiveSettings.BackgroundImagePath = ""; // Optional: clear path on failure
+                    // settingsModifiedByDownload = true;
                 }
             }
-            else
+            else if (string.IsNullOrEmpty(effectiveSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(effectiveSettings.BackgroundImagePath))
             {
-                App.Logger?.Error("App: Reloaded settings (newSettings) are null after remote update notification. No changes applied to App.CurrentSettings.");
+                // If remote URL is cleared, clear local path if it was likely from a remote source.
+                App.Logger?.Information("App (OnRemoteSettingsUpdated): RemoteBackgroundImageUrl is empty. Clearing local background image path.");
+                effectiveSettings.BackgroundImagePath = "";
+                effectiveSettings.LastSuccessfullyDownloadedImageUrl = "";
+                effectiveSettings.LastSuccessfullyDownloadedImageHash = "";
+                settingsModifiedByDownload = true;
             }
+
+            if (settingsModifiedByDownload)
+            {
+                App.Logger?.Information("App (OnRemoteSettingsUpdated): Settings modified by background download. Saving.");
+                await SettingsManager.SaveSettingsAsync(effectiveSettings, true); // Preserve remote LastModifiedUtc
+            }
+
+            // Assign to App.CurrentSettings. The setter will handle preloading if BackgroundImagePath changed.
+            CurrentSettings = effectiveSettings;
+            // UI text updates, etc., are handled by pages on load/navigation.
+            // The setter for CurrentSettings now triggers background refresh if needed.
         }
+
         private static async Task<string> DownloadAndSaveImageAsync(string imageUrl, string expectedHash, string localFileNameSeed)
         {
-
             if (string.IsNullOrEmpty(imageUrl))
             {
                 App.Logger?.Information("DownloadAndSaveImageAsync: Image URL is empty, skipping download.");
-                return null; // No URL, no local path
+                return null;
             }
-
             App.Logger?.Information("DownloadAndSaveImageAsync: Attempting to download image from {ImageUrl}", imageUrl);
             try
             {
                 using (var httpClient = new HttpClient())
                 {
                     byte[] imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
-                    App.Logger?.Debug("DownloadAndSaveImageAsync: Downloaded {ByteCount} bytes.", imageBytes.Length);
-
                     if (imageBytes.Length == 0)
                     {
                         App.Logger?.Warning("DownloadAndSaveImageAsync: Downloaded image is empty for URL {ImageUrl}", imageUrl);
                         return null;
                     }
 
-                    // Optional: Verify hash
                     if (!string.IsNullOrEmpty(expectedHash))
                     {
-                        App.Logger?.Debug("DownloadAndSaveImageAsync: Hash is provided, so verifying hash for {ImageUrl}", imageUrl);
-
                         using (var sha256 = SHA256.Create())
                         {
                             byte[] computedHashBytes = sha256.ComputeHash(imageBytes);
@@ -619,43 +450,28 @@ namespace WinUI3App1
                             if (!computedHash.Equals(expectedHash.ToLowerInvariant(), StringComparison.Ordinal))
                             {
                                 App.Logger?.Error("DownloadAndSaveImageAsync: Hash mismatch for {ImageUrl}. Expected: {Expected}, Computed: {Computed}", imageUrl, expectedHash, computedHash);
-                                return null; // Hash mismatch, don't use the image
+                                return null;
                             }
-                            App.Logger?.Debug("DownloadAndSaveImageAsync: Image hash verified successfully for {ImageUrl}.", imageUrl);
+                            App.Logger?.Debug("DownloadAndSaveImageAsync: Image hash verified for {ImageUrl}.", imageUrl);
                         }
-                    }
-                    else
-                    {
-                        App.Logger?.Debug("DownloadAndSaveImageAsync: No hash provided, skipping verification for {ImageUrl}", imageUrl);
                     }
 
                     StorageFolder localCacheFolder = ApplicationData.Current.LocalFolder;
                     StorageFolder backgroundsFolder = await localCacheFolder.CreateFolderAsync("Backgrounds", CreationCollisionOption.OpenIfExists);
-
-                    // Create a somewhat unique local filename to avoid conflicts if URL changes often,
-                    // or simply overwrite a fixed name like "current_background.jpg".
-                    // Using a hash of the URL or the expected image hash in the filename can help with caching.
-                    string localFileName = $"remote_bg_{localFileNameSeed.ReplaceNonAlphaNumericChars("_")}.jpg";
-                    // Ensure localFileNameSeed is reasonably unique, e.g. hash of URL.
-                    // For simplicity, let's use a fixed name for now and just replace.
-                    localFileName = "current_remote_background.jpg";
-
+                    string localFileName = $"remote_bg_{localFileNameSeed.ReplaceNonAlphaNumericChars("_")}.jpg"; // Or a fixed name
+                    localFileName = "current_remote_background.jpg"; // Using a fixed name for simplicity
 
                     StorageFile imageFile = await backgroundsFolder.CreateFileAsync(localFileName, CreationCollisionOption.ReplaceExisting);
                     await FileIO.WriteBytesAsync(imageFile, imageBytes);
-                    App.Logger?.Debug("DownloadAndSaveImageAsync: Image saved locally to {LocalPath}", imageFile.Path);
-                    return imageFile.Path; // Return the local path
+                    App.Logger?.Information("DownloadAndSaveImageAsync: Image saved locally to {LocalPath}", imageFile.Path);
+                    return imageFile.Path;
                 }
-            }
-            catch (HttpRequestException httpEx)
-            {
-                App.Logger?.Error(httpEx, "DownloadAndSaveImageAsync: HTTP request failed for {ImageUrl}.", imageUrl);
             }
             catch (Exception ex)
             {
                 App.Logger?.Error(ex, "DownloadAndSaveImageAsync: Failed to download or save image from {ImageUrl}.", imageUrl);
+                return null;
             }
-            return null; // Return null if download or save failed
         }
 
         private static async void App_OnSettingsWrittenToDisk_Handler(object sender, PhotoBoothSettings activeSettings)
@@ -665,12 +481,9 @@ namespace WinUI3App1
                 Logger?.Warning("App: OnSettingsWrittenToDisk triggered with null settings. Cannot report current state.");
                 return;
             }
-
             await PublishCurrentSettingsToMqttAsync(activeSettings);
-
         }
 
-        // Publishes the current settings to MQTT
         private static async Task PublishCurrentSettingsToMqttAsync(PhotoBoothSettings settingsToPublish)
         {
             if (settingsToPublish == null)
@@ -678,114 +491,177 @@ namespace WinUI3App1
                 Logger?.Warning("App: PublishCurrentSettingsToMqttAsync called with null settings. Aborting.");
                 return;
             }
-
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
-                // Use the PhotoboothIdentifier from the settings object being published for consistency in the topic
-                string currentIdForTopic = settingsToPublish.PhotoboothId ?? PhotoboothIdentifier;
-                string topic = $"photobooth/{currentIdForTopic}/settings/current_state";
-
+                string topic = $"photobooth/{settingsToPublish.PhotoboothId ?? PhotoboothIdentifier}/settings/current_state";
                 Logger?.Information("App: Publishing current settings to MQTT. Topic: {Topic}, Timestamp: {Timestamp}", topic, settingsToPublish.LastModifiedUtc);
-
                 try
                 {
-                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(settingsToPublish,
-                        new System.Text.Json.JsonSerializerOptions
-                        {
-                            WriteIndented = true,
-                            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-                        });
+                    var options = new JsonSerializerOptions { WriteIndented = false, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+                    string jsonPayload = JsonSerializer.Serialize(settingsToPublish, options);
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, true); // Retain current settings
+                }
+                catch (Exception ex) { Logger?.Error(ex, "App: Failed to publish current settings to MQTT topic {Topic}", topic); }
+            }
+            else Logger?.Warning("App: Cannot publish current settings. MQTT not connected/available or PhotoboothIdentifier missing. Settings Timestamp: {Timestamp}", settingsToPublish.LastModifiedUtc);
+        }
 
-                    // This message should NOT be retained; it's a point-in-time snapshot.
-                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MqttQualityOfServiceLevel.AtLeastOnce, true);
-                    Logger?.Information("App: Successfully published current settings (full object) to {Topic}", topic);
-                }
-                catch (Exception ex)
+        private static void NotifyActivePageToRefreshBackground()
+        {
+            if (MainWindow?.DispatcherQueue != null && MainWindow.DispatcherQueue.HasThreadAccess)
+            {
+                // Already on UI thread, call directly
+                RefreshActivePageBackgroundInternal();
+            }
+            else if (MainWindow?.DispatcherQueue != null)
+            {
+                // Not on UI thread, dispatch
+                bool Succeeded = MainWindow.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Normal, () =>
                 {
-                    Logger?.Error(ex, "App: Failed to publish current settings (full object) to MQTT topic {Topic}", topic);
+                    RefreshActivePageBackgroundInternal();
+                });
+                if (!Succeeded) Logger?.Error("App: Failed to enqueue background refresh notification.");
+            }
+            else Logger?.Warning("App: MainWindow or its DispatcherQueue is null. Cannot dispatch background refresh notification.");
+        }
+
+        private static void RefreshActivePageBackgroundInternal()
+        {
+            App.Logger?.Debug("App: RefreshActivePageBackgroundInternal - Notifying active page to refresh background display.");
+            if (MainWindow.Content is Frame rootFrame)
+            {
+                if (rootFrame.Content is MainPage mainPageInstance)
+                {
+                    Logger?.Debug("App: Active page is MainPage. Calling RefreshBackgroundDisplay.");
+                    mainPageInstance.RefreshBackgroundDisplay();
                 }
+                else if (rootFrame.Content is PhotoBoothPage photoBoothPageInstance)
+                {
+                    Logger?.Debug("App: Active page is PhotoBoothPage. Calling RefreshBackgroundDisplay.");
+                    photoBoothPageInstance.RefreshBackgroundDisplay();
+                }
+                else if (rootFrame.Content is Page genericPage) // Fallback for any other page type
+                {
+                    Logger?.Warning("App: Active page is {PageType}, which may not have RefreshBackgroundDisplay. Attempting dynamic call if method exists.", genericPage.GetType().Name);
+                    // You could use reflection here if absolutely necessary, but it's brittle.
+                    // It's better if pages that need this implement a common interface or base class method.
+                    // For now, we'll assume MainPage and PhotoBoothPage are the primary targets.
+                }
+                else
+                {
+                    Logger?.Warning("App: rootFrame.Content is not a Page. Cannot refresh background.");
+                }
+            }
+            else Logger?.Warning("App: MainWindow.Content is not a Frame on UI thread. Cannot determine active page to refresh background.");
+        }
+
+        private static async Task PreloadBackgroundImageAsync()
+        {
+            Logger?.Debug("App Preloader: Attempting to preload background image.");
+            string imagePath = CurrentSettings?.BackgroundImagePath; // Capture for UI thread access
+
+            if (MainWindow?.DispatcherQueue == null)
+            {
+                Logger?.Error("App Preloader: MainWindow or DispatcherQueue not available. Cannot preload image on UI thread.");
+                PreloadedBackgroundImage = null; // Ensure it's cleared if we can't proceed
+                return;
+            }
+
+            // Create a TaskCompletionSource to await the result of the dispatched operation
+            var tcs = new TaskCompletionSource<object>(); // Using object as we just care about completion or exception
+
+            // Dispatch the image loading logic to the UI thread using TryEnqueue
+            bool enqueued = MainWindow.DispatcherQueue.TryEnqueue(async () => // This lambda becomes async void
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(imagePath))
+                    {
+                        Logger?.Information("App Preloader (UI Thread): No background image path set. Clearing preloaded image.");
+                        PreloadedBackgroundImage = null;
+                        tcs.TrySetResult(null); // Signal completion
+                        return;
+                    }
+
+                    if (!File.Exists(imagePath))
+                    {
+                        Logger?.Warning("App Preloader (UI Thread): Background image file not found at {Path}. Clearing preloaded image.", imagePath);
+                        PreloadedBackgroundImage = null;
+                        tcs.TrySetResult(null); // Signal completion
+                        return;
+                    }
+
+                    // Inner try-catch for the actual image loading operations
+                    try
+                    {
+                        Logger?.Information("App Preloader (UI Thread): Preloading background image from {Path}", imagePath);
+                        BitmapImage bitmap = new BitmapImage(); // Created on UI thread
+
+                        // Use Windows.Storage.Streams.FileRandomAccessStream for BitmapImage
+                        using (IRandomAccessStream fileStream = await FileRandomAccessStream.OpenAsync(imagePath, FileAccessMode.Read))
+                        {
+                            bitmap.DecodePixelWidth = 1920; // Example: decode to a max width of 1920px
+                            await bitmap.SetSourceAsync(fileStream); // Used on UI thread
+                        }
+                        PreloadedBackgroundImage = bitmap; // Assigned on UI thread
+                        Logger?.Information("App Preloader (UI Thread): Background image preloaded successfully.");
+                        tcs.TrySetResult(null); // Signal successful completion
+                    }
+                    catch (Exception exInner) // Catch exceptions during image loading (e.g., invalid image format)
+                    {
+                        Logger?.Error(exInner, "App Preloader (UI Thread): Failed to load background image from {Path}.", imagePath);
+                        PreloadedBackgroundImage = null;
+                        tcs.TrySetException(exInner); // Signal completion with an error
+                    }
+                }
+                catch (Exception exOuter) // Catch any other unexpected exception from the dispatched lambda
+                {
+                    Logger?.Error(exOuter, "App Preloader (UI Thread): Outer exception in dispatched lambda for background loading.");
+                    PreloadedBackgroundImage = null;
+                    tcs.TrySetException(exOuter); // Signal completion with an error
+                }
+            });
+
+            if (enqueued)
+            {
+                await tcs.Task; // Wait for the enqueued work (and its TaskCompletionSource) to complete
             }
             else
             {
-                Logger?.Warning("App: Cannot publish current settings. MQTT not connected, service not available, or PhotoboothIdentifier for topic is missing. Settings Timestamp: {Timestamp}", settingsToPublish.LastModifiedUtc);
+                Logger?.Error("App Preloader: Failed to enqueue background image loading operation to UI thread.");
+                PreloadedBackgroundImage = null;
+                // Optionally, throw an exception or handle this scenario as a failure
+                // For example: throw new InvalidOperationException("Failed to enqueue background image load.");
             }
         }
 
-        // In App.xaml.cs (within the App class)
-        private async static void LogHeartbeatMqtt(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
+        private static void LogHeartbeatMqtt(object state)
         {
-            // Publish MQTT Heartbeat
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
-                string heartbeatTopic = $"photobooth/{PhotoboothIdentifier}/heartbeat";
-                // "o" format is the round-trip DateTime pattern (ISO 8601, includes Z for UTC)
-                string heartbeatPayload = DateTime.UtcNow.ToString("o");
-
+                string topic = $"photobooth/{PhotoboothIdentifier}/heartbeat";
+                string payload = DateTime.UtcNow.ToString("o");
                 try
                 {
-                    App.Logger?.Verbose("MQTT HEARTBEAT: Attempting to publish to {Topic} with payload {Payload}", heartbeatTopic, heartbeatPayload);
-
-                    await MqttServiceInstance.PublishAsync(
-                        topic: heartbeatTopic,
-                        payload: heartbeatPayload,
-                        qos: MqttQualityOfServiceLevel.AtMostOnce, // QoS 0 is usually sufficient for heartbeats
-                        retain: false);
-
+                    // Fire-and-forget is acceptable for heartbeats if not critical for them to always succeed
+                    _ = MqttServiceInstance.PublishAsync(topic, payload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce, false);
+                    Logger?.Verbose("MQTT HEARTBEAT: Published to {Topic}", topic);
                 }
-                catch (Exception ex)
-                {
-                    App.Logger?.Error(ex, "MQTT HEARTBEAT: Failed to publish heartbeat to {Topic}", heartbeatTopic);
-                }
+                catch (Exception ex) { Logger?.Error(ex, "MQTT HEARTBEAT: Failed to publish to {Topic}", topic); }
             }
-            else
-            {
-                // This log might be frequent if MQTT is often disconnected. Consider its verbosity.
-                App.Logger?.Debug("MQTT HEARTBEAT: Cannot publish. MQTT service not connected, instance not available, or PhotoboothIdentifier is missing.");
-            }
-
+            else Logger?.Debug("MQTT HEARTBEAT: Cannot publish. MQTT not connected/available or PhotoboothIdentifier missing.");
         }
 
-        private async static void LogHeartbeatLogging(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
+        private static void LogHeartbeatLogging(object state)
         {
-            // 1. Log in text file
-            // Ensure Logger is initialized and we have the necessary info.
-            // This check is important because the timer callback might fire
-            // during app shutdown if not disposed properly, or very early if not careful.
             if (Logger != null && CurrentSettings != null && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
-                Logger.Information("HEARTBEAT: Application is active. Current Page: {CurrentPageName}, Photobooth ID: {PhotoboothID}",
-                    CurrentPageName, // Static property holding the current page name
-                    PhotoboothIdentifier); // Static property holding the Photobooth ID
+                Logger.Information("HEARTBEAT: App active. Page: {CurrentPageName}, ID: {PhotoboothID}", CurrentPageName, PhotoboothIdentifier);
             }
-            else
-            {
-                // Fallback to Debug.WriteLine if full logging isn't ready or there's an issue.
-                // This should be rare after proper startup.
-                System.Diagnostics.Debug.WriteLine($"HEARTBEAT (Debug fallback): App active. Page: {CurrentPageName}. Logger/Settings/ID might not be fully initialized.");
-            }
+            else System.Diagnostics.Debug.WriteLine($"HEARTBEAT (Debug fallback): App active. Page: {CurrentPageName}. Logger/Settings/ID might not be fully initialized.");
         }
 
-        public enum PhotoBoothState
-        {
-            Starting,
-            LoadingMainPage,
-            Idle,
-            LoadingPhotoBoothPage,
-            ResettingPhotoBoothPage,
-            ShowingInstructions,
-            Countdown,
-            TakingPhoto,
-            DownloadingPhotoFromCamera,
-            RecordingVideo,
-            ShowingSinglePhoto,
-            ReviewingPhotos,
-            ReviewingPhotosTimedOut,
-            Saving, 
-            Processing,
-            Uploading,
-            Finished
-        }
-
+        public enum PhotoBoothState { Starting, LoadingMainPage, Idle, LoadingPhotoBoothPage, ResettingPhotoBoothPage, ShowingInstructions, Countdown, TakingPhoto, DownloadingPhotoFromCamera, RecordingVideo, ShowingSinglePhoto, ReviewingPhotos, ReviewingPhotosTimedOut, Saving, Processing, Uploading, Finished }
         public static PhotoBoothState State
         {
             get => _state;
@@ -795,88 +671,15 @@ namespace WinUI3App1
                 {
                     string oldStateForLog = _state.ToString();
                     _state = value;
-                    Logger?.Information("App: State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
-
-                    // Automatically publish the full status when this state changes
+                    Logger?.Information("App: State changed from {OldState} to: {NewState} for {PhotoboothId}", oldStateForLog, _state.ToString(), PhotoboothIdentifier);
                     _ = PublishPhotoBoothStatusJsonAsync();
                 }
             }
         }
-
-        // New public static method to update CurrentSettings
         public static void UpdateAppSettings(PhotoBoothSettings newSettings)
         {
-            if (newSettings != null)
-            {
-                CurrentSettings = newSettings;
-                Logger?.Information("App: App.CurrentSettings has been updated programmatically.");
-
-                // Optionally, if PhotoboothIdentifier could change via SettingsPage (unlikely for now), re-validate it here.
-                // string oldId = PhotoboothIdentifier;
-                // PhotoboothIdentifier = CurrentSettings.PhotoboothId;
-                // ... (validation logic for PhotoboothIdentifier) ...
-            }
-            else
-            {
-                Logger?.Warning("App: UpdateAppSettings called with null settings. No update performed.");
-            }
+            if (newSettings != null) CurrentSettings = newSettings; // Uses the property setter
+            else Logger?.Warning("App: UpdateAppSettings called with null settings. No update performed.");
         }
-
-        private static async Task PreloadBackgroundImageAsync()
-        {
-            Logger?.Debug($"Preloading background images");
-
-            if (CurrentSettings == null || string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
-            {
-                Logger?.Information("App Preloader: No background image path set in settings, skipping preload.");
-                PreloadedBackgroundImage = null; // Ensure it's null if no path
-                return;
-            }
-
-            if (!File.Exists(CurrentSettings.BackgroundImagePath))
-            {
-                Logger?.Warning("App Preloader: Background image file not found at {Path}, skipping preload.", CurrentSettings.BackgroundImagePath);
-                PreloadedBackgroundImage = null;
-                return;
-            }
-
-            try
-            {
-                Logger?.Information("App Preloader: Preloading background image from {Path}", CurrentSettings.BackgroundImagePath);
-                BitmapImage bitmap = new BitmapImage();
-                using (FileStream stream = File.OpenRead(CurrentSettings.BackgroundImagePath))
-                {
-                    // Set DecodePixelWidth/Height here if you want to decode to a specific size during preload
-                    // This is useful if your original images are very large.
-                    // Example:
-                    // Find target screen dimensions or a reasonable max size
-                    // var mainDisplayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(MainWindow.AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
-                    // if (mainDisplayArea != null) {
-                    //    bitmap.DecodePixelWidth = mainDisplayArea.WorkArea.Width;
-                    // } else {
-                    //    bitmap.DecodePixelWidth = 1920; // Fallback
-                    // }
-                    bitmap.DecodePixelWidth = 1920; // Or a sensible default based on your target display
-
-                    await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-                }
-                PreloadedBackgroundImage = bitmap;
-                Logger?.Information("App Preloader: Background image preloaded successfully.");
-            }
-            catch (Exception ex)
-            {
-                Logger?.Error(ex, "App Preloader: Failed to preload background image from {Path}", CurrentSettings.BackgroundImagePath);
-                PreloadedBackgroundImage = null;
-            }
-        }
-
-
-        // DllImport for SetDllDirectory can be removed if not actively used for other purposes.
-        // If it was for a specific SDK path, ensure that SDK is now correctly referenced or its path managed.
-        // [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        // private static extern bool SetDllDirectory(string lpPathName);
-
-        // m_window field is not used, App.MainWindow static property is used instead.
-        // private Window? m_window; 
     }
 }

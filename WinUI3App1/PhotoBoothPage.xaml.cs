@@ -632,5 +632,13 @@ namespace WinUI3App
             #endregion
         }
 
+        // New public method to be called by App.xaml.cs
+        public async void RefreshBackgroundDisplay()
+        {
+            App.Logger?.Debug("PhotoBoothPage: RefreshBackgroundDisplay called.");
+            // This reuses your existing LoadPageBackgroundAsync logic
+            await LoadPageBackgroundAsync();
+        }
+
     }
 }

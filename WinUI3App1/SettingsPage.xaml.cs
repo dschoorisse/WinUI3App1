@@ -190,7 +190,7 @@ namespace WinUI3App1
             await SettingsManager.SaveSettingsAsync(_loadedSettingsModel);
             Debug.WriteLine("SettingsPage: Settings saved to JSON via SettingsManager.");
 
-            App.UpdateAppSettings(_loadedSettingsModel);
+            App.CurrentSettings = _loadedSettingsModel;
             App.Logger?.Information("SettingsPage: App.CurrentSettings updated with latest saved values.");
 
             StoreOriginalValues(); // Update original values to reflect the newly saved state

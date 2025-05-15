@@ -179,6 +179,17 @@ namespace WinUI3App
             }
         }
 
+        // New public method to be called by App.xaml.cs
+        public async void RefreshBackgroundDisplay()
+        {
+            App.Logger?.Debug("MainPage: RefreshBackgroundDisplay called.");
+            // This reuses your existing LoadPageBackgroundAsync logic,
+            // which already correctly uses App.PreloadedBackgroundImage.
+            // Ensure LoadPageBackgroundAsync is safe to call multiple times.
+            await LoadPageBackgroundAsync();
+        }
+
+
         // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
         public async Task LoadPageBackgroundAsync() 
         {
