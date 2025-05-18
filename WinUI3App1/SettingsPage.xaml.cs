@@ -10,10 +10,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-// using System.IO.Ports; // Niet meer nodig
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop; // Voor InitializeWithWindow
 
@@ -450,7 +449,22 @@ namespace WinUI3App1
         {
             try
             {
-                string logsDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+                // TODO: save in settings and use this path, also in App.xaml.cs
+                string localAppDataPath;
+                try
+                {
+                    // This is the standard and preferred way
+                    localAppDataPath = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+                }
+                catch (Exception ex) // InvalidOperationException can occur if LocalFolder is not accessible (e.g., certain contexts for unpackaged apps very early)
+                {
+                    App.Logger?.Error(ex, "ConfigureLogging: Could not access ApplicationData.Current.LocalFolder.Path. Falling back to AppContext.BaseDirectory for logs path.");
+                    // Fallback path, be mindful of write permissions if app is installed in Program Files
+                    localAppDataPath = AppContext.BaseDirectory;
+                }
+
+                string logsDirectory = Path.Combine(localAppDataPath, "Logs"); // New base path
+
                 if (!Directory.Exists(logsDirectory)) { Directory.CreateDirectory(logsDirectory); }
                 // App.Logger?.Information("Opening logs directory: {LogsDirectory}", logsDirectory);
                 Debug.WriteLine($"Opening logs directory: {logsDirectory}"); // Using Debug.WriteLine if App.Logger isn't set up yet
