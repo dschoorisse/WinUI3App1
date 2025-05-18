@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Shapes;
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage;
@@ -167,20 +168,30 @@ namespace WinUI3App
             _photoPaths.Clear();
 
             InstructionTextBackground.Opacity = 0;
-            CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
-            TakenPhotoImage.Source = null; TakenPhotoImage.Opacity = 0;
-            if (TakenPhotoImage.RenderTransform is ScaleTransform st) { st.ScaleX = 0.5; st.ScaleY = 0.5; }
-            else { TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 }; TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5); }
+            CountdownTextBackground.Opacity = 0; 
+            CountdownText.Text = "";
+            TakenPhotoImage.Source = null; 
+            TakenPhotoImage.Opacity = 0;
+            if (TakenPhotoImage.RenderTransform is ScaleTransform st) 
+            { 
+                st.ScaleX = 0.5; st.ScaleY = 0.5; 
+            }
+            else 
+            { 
+                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 }; 
+                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5); 
+            }
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
 
-            HorizontalPhotoGallery.Visibility = Visibility.Collapsed; 
-            HorizontalPhotoGallery.Opacity = 0;
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGalleryContainer.Opacity = 0;
 
-            VerticalPhotoGallery.Visibility = Visibility.Collapsed;
-            VerticalPhotoGallery.Opacity = 0;
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Opacity = 0;
 
-            ActionButtonsPanel.Visibility = Visibility.Collapsed; ActionButtonsPanel.Opacity = 0;
+            ActionButtonsPanel.Visibility = Visibility.Collapsed; 
+            ActionButtonsPanel.Opacity = 0;
             OverlayGrid.Visibility = Visibility.Collapsed;
 
             UpdateProgressIndicator(0, false);
@@ -213,8 +224,8 @@ namespace WinUI3App
             UpdateProgressIndicator(0, false); // Show 3 pending dots
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
-            HorizontalPhotoGallery.Visibility = Visibility.Collapsed;
-            VerticalPhotoGallery.Visibility = Visibility.Collapsed;
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
 
             var fadeInAnimation = new DoubleAnimation
             { To = 1.0, Duration = TimeSpan.FromSeconds(1), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
@@ -294,8 +305,8 @@ namespace WinUI3App
                 App.State = App.PhotoBoothState.Countdown;
                 CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
 
-                HorizontalPhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
-                VerticalPhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+                HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+                VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
 
                 UpdateProgressIndicator(_photosTaken, true);
                 ProgressIndicatorPanel.Visibility = Visibility.Visible; // Make sure dots are shown
@@ -431,13 +442,13 @@ namespace WinUI3App
                 useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.HorizontalReviewLayout);
 
             // Bepaal welke galerij en welke image controls te gebruiken
-            StackPanel activeGallery;
+            Viewbox activeGalleryContainer;
             Image reviewPhoto1, reviewPhoto2, reviewPhoto3;
 
             if (useHorizontalLayout)
             {
-                activeGallery = HorizontalPhotoGallery;
-                VerticalPhotoGallery.Visibility = Visibility.Collapsed; // Verberg de andere
+                activeGalleryContainer = HorizontalPhotoGalleryContainer;
+                VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
                 reviewPhoto1 = H_Photo1Image;
                 reviewPhoto2 = H_Photo2Image;
                 reviewPhoto3 = H_Photo3Image;
@@ -445,8 +456,8 @@ namespace WinUI3App
             }
             else
             {
-                activeGallery = VerticalPhotoGallery;
-                HorizontalPhotoGallery.Visibility = Visibility.Collapsed; // Verberg de andere
+                activeGalleryContainer = VerticalPhotoGalleryContainer;
+                HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
                 reviewPhoto1 = V_Photo1Image;
                 reviewPhoto2 = V_Photo2Image;
                 reviewPhoto3 = V_Photo3Image;
@@ -476,14 +487,14 @@ namespace WinUI3App
                 App.Logger?.Warning("PhotoBoothPage: Path voor foto 3 is leeg of null.");
 
 
-            activeGallery.Opacity = 0;
+            activeGalleryContainer.Opacity = 0;
             ActionButtonsPanel.Opacity = 0; // Knoppen blijven hetzelfde
-            activeGallery.Visibility = Visibility.Visible;
+            activeGalleryContainer.Visibility = Visibility.Visible;
             ActionButtonsPanel.Visibility = Visibility.Visible;
 
             // Animatie voor galerij en knoppen
             var galleryFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
-            Storyboard.SetTarget(galleryFadeIn, activeGallery); Storyboard.SetTargetProperty(galleryFadeIn, "Opacity");
+            Storyboard.SetTarget(galleryFadeIn, activeGalleryContainer); Storyboard.SetTargetProperty(galleryFadeIn, "Opacity");
 
             var buttonsFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
             Storyboard.SetTarget(buttonsFadeIn, ActionButtonsPanel); Storyboard.SetTargetProperty(buttonsFadeIn, "Opacity");
@@ -514,8 +525,8 @@ namespace WinUI3App
             // Proceed to save the photos
             App.State = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
-            HorizontalPhotoGallery.Visibility = Visibility.Collapsed; 
-            VerticalPhotoGallery.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
             ActionButtonsPanel.Visibility = Visibility.Collapsed;
 
             #region Fade-in of overlay

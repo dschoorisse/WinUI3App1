@@ -46,28 +46,38 @@
                         </Grid>
                     </Viewbox>
 
-                    <StackPanel x:Name="HorizontalPhotoGallery"
-                                Orientation="Horizontal"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Spacing="10"
-                                Visibility="Collapsed" Opacity="0">
-                        <Image x:Name="H_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
-                        <Image x:Name="H_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
-                        <Image x:Name="H_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
-                    </StackPanel>
+                    <Viewbox x:Name="HorizontalPhotoGalleryContainer"
+                             Stretch="Uniform"
+                             StretchDirection="Both"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             Visibility="Collapsed" Opacity="0">
+                        <StackPanel x:Name="HorizontalPhotoGallery"
+                                    Orientation="Horizontal"
+                                    Spacing="10"
+                                    Padding="5">
+                            <Image x:Name="H_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
+                            <Image x:Name="H_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
+                            <Image x:Name="H_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
+                        </StackPanel>
+                    </Viewbox>
 
-                    <StackPanel x:Name="VerticalPhotoGallery"
-                                Orientation="Vertical"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Spacing="10"
-                                Visibility="Collapsed" Opacity="0">
-                        <Image x:Name="V_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
-                        <Image x:Name="V_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
-                        <Image x:Name="V_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
-                    </StackPanel>
-                    
+                    <Viewbox x:Name="VerticalPhotoGalleryContainer"
+                             Stretch="Uniform"
+                             StretchDirection="Both"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             Visibility="Collapsed" Opacity="0">
+                        <StackPanel x:Name="VerticalPhotoGallery"
+                                    Orientation="Vertical"
+                                    Spacing="10"
+                                    Padding="5">
+                            <Image x:Name="V_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
+                            <Image x:Name="V_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
+                            <Image x:Name="V_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
+                        </StackPanel>
+                    </Viewbox>
+
                 </Grid>
 
                 <StackPanel x:Name="ProgressIndicatorPanel"

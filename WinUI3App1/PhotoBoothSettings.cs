@@ -65,15 +65,15 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string DmxLightMqttTopic { get; set; } = $"photobooth/{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}/light/dmx";
         public int ExternalDmxMinimum { get; set; } = 10;
         public int ExternalDmxMaximum { get; set; } = 80;
-        public int DmxStartAddress { get; set; } = 1; // NIEUW: DMX Startadres
+        public int DmxStartAddress { get; set; } = 1;
 
-        // External Control Settings (MQTT & Upload) - NIEUWE CATEGORIE
+        // External Control Settings (MQTT & Upload) 
         public string MqttBrokerAddress { get; set; } = "192.168.1.3";
         public int MqttBrokerPort { get; set; } = 1883;
         public string MqttUsername { get; set; } = "";
-        public string MqttPassword { get; set; } = "d8232msn2987sd"; // Example password (consider secure storage for production)
-        public string ImageUploadUrl { get; set; } = ""; // NIEUW
-        public bool EnableRemoteAdminViaMqtt { get; set; } = false; // Was al aanwezig
+        public string MqttPassword { get; set; } = "d8232msn2987sd"; // Example password (TODO: secure storage for production)
+        public string ImageUploadUrl { get; set; } = "";
+        public bool EnableRemoteAdminViaMqtt { get; set; } = true; // Was al aanwezig
 
         // Hidden/Advanced Settings (Examples of settings not on the UI but configurable via JSON)
         public bool AutoStartPhotoSequence { get; set; } = false; // E.g., auto-start after a delay
