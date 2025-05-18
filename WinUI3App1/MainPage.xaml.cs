@@ -58,7 +58,6 @@ namespace WinUI3App
         private async void Page_Loaded(object sender, RoutedEventArgs e)
         {
             App.Logger?.Information("MainPage: Page Loaded.");
-            this.Focus(FocusState.Programmatic);
 
             // Check if lastest settings are loadeds
             if ((App.lastPreloadBackgroundUtc == DateTime.MinValue ) || 
@@ -104,6 +103,9 @@ namespace WinUI3App
 
             // Set final state after loading and initial animations
             App.State = App.PhotoBoothState.Idle;
+
+            // Set focus for listening to keyboard 'S' press
+            this.Focus(FocusState.Programmatic);
 
         }
 

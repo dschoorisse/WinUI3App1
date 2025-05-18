@@ -8,401 +8,327 @@
     mc:Ignorable="d"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <Grid Padding="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Page.Resources>
+        <local:IntToPercentConverter x:Key="IntToPercentConverter"/>
+        <Style TargetType="TextBlock" x:Key="SectionHeaderStyle">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,20,0,10"/>
+        </Style>
+        <Style TargetType="Grid" x:Key="SettingItemStyle">
+            <Setter Property="Margin" Value="0,5"/>
+        </Style>
+        <Style TargetType="TextBlock" x:Key="SettingLabelStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+        </Style>
+        <Style TargetType="TextBox" x:Key="SettingInputStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+        <Style TargetType="PasswordBox" x:Key="CustomPasswordBoxStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+        <Style TargetType="NumberBox" x:Key="CustomNumberBoxStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+        <Style TargetType="ComboBox" x:Key="CustomComboBoxStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+        <Style TargetType="Button" x:Key="BrowseButtonStyle">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+        </Style>
+    </Page.Resources>
 
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,20">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+        <StackPanel Margin="20">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="LayoutStates" CurrentStateChanged="LayoutStates_CurrentStateChanged">
+                    <VisualState x:Name="WideLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="850" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[0].Width" Value="400"/>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[1].Width" Value="10"/>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[2].Width" Value="*"/>
+                            <Setter Target="MainContentGrid.RowDefinitions[0].Height" Value="Auto"/>
+                            <Setter Target="MainContentGrid.RowDefinitions[1].Height" Value="0"/>
+                            <Setter Target="Column1StackPanel.(Grid.Column)" Value="0"/>
+                            <Setter Target="Column1StackPanel.(Grid.Row)" Value="0"/>
+                            <Setter Target="Column1StackPanel.(Grid.ColumnSpan)" Value="1"/>
 
-            <TextBlock Text="Photo Booth Settings" 
-                       FontSize="32" 
-                       FontWeight="SemiBold"/>
+                            <Setter Target="Column2StackPanel.(Grid.Column)" Value="2"/>
+                            <Setter Target="Column2StackPanel.(Grid.Row)" Value="0"/>
+                            <Setter Target="Column2StackPanel.(Grid.ColumnSpan)" Value="1"/>
+                            <Setter Target="Column2StackPanel.Visibility" Value="Visible"/>
+                            <Setter Target="LayoutDebugIndicator.Text" Value="Layout: Wide"/>
+                            <Setter Target="LayoutDebugIndicator.Background" Value="LightGreen"/>
+                        </VisualState.Setters>
+                    </VisualState>
+                    <VisualState x:Name="NarrowLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[0].Width" Value="*"/>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[1].Width" Value="0"/>
+                            <Setter Target="MainContentGrid.ColumnDefinitions[2].Width" Value="0"/>
+                            <Setter Target="MainContentGrid.RowDefinitions[0].Height" Value="Auto"/>
+                            <Setter Target="MainContentGrid.RowDefinitions[1].Height" Value="Auto"/>
 
-            <Button Grid.Column="1"
-                    x:Name="BackButton"
-                    Click="BackButton_Click"
-                    ToolTipService.ToolTip="Return to Welcome Screen">
-                <FontIcon Glyph="&#xE72B;" FontSize="16"/>
-            </Button>
-        </Grid>
+                            <Setter Target="Column1StackPanel.(Grid.Column)" Value="0"/>
+                            <Setter Target="Column1StackPanel.(Grid.Row)" Value="0"/>
+                            <Setter Target="Column1StackPanel.(Grid.ColumnSpan)" Value="1"/>
+                            <Setter Target="Column2StackPanel.(Grid.Column)" Value="0"/>
+                            <Setter Target="Column2StackPanel.(Grid.Row)" Value="1"/>
+                            <Setter Target="Column2StackPanel.(Grid.ColumnSpan)" Value="1"/>
+                            <Setter Target="Column2StackPanel.Visibility" Value="Visible"/>
+                            <Setter Target="LayoutDebugIndicator.Text" Value="Layout: Narrow"/>
+                            <Setter Target="LayoutDebugIndicator.Background" Value="LightCoral"/>
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
 
-        <!-- Settings Content -->
-        <ScrollViewer Grid.Row="1"
-                      HorizontalScrollMode="Disabled"
-                      VerticalScrollMode="Auto"
-                      VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="24">
-                <!-- UI/Look and Feel Section -->
-                <StackPanel>
-                    <TextBlock Text="UI / Look and Feel" 
-                               FontSize="24" 
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,16"/>
+            <TextBlock x:Name="LayoutDebugIndicator" FontWeight="Bold" Margin="0,0,0,10"/>
+            <TextBlock Text="Photobooth Settings" FontSize="28" FontWeight="Bold" Margin="0,0,0,20"/>
+            <TextBlock x:Name="LastModifiedTextBlock" Margin="0,0,0,20" FontSize="12" Foreground="Gray"/>
 
-                    <!-- Background Image -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Background Image" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
+            <Grid x:Name="MainContentGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                        <Grid ColumnDefinitions="*,Auto" RowSpacing="8">
-                            <TextBox x:Name="BackgroundImagePathTextBox" 
-                                     Grid.Column="0" 
-                                     PlaceholderText="Path to background image..." 
-                                     IsReadOnly="True"
-                                     Text="{x:Bind BackgroundImagePath, Mode=TwoWay}"/>
+                <StackPanel x:Name="Column1StackPanel" Grid.Column="0" Grid.Row="0">
+                    <TextBlock Text="Algemeen &amp; Vormgeving Hoofdscherm" Style="{StaticResource SectionHeaderStyle}"/>
+                    
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Achtergrondafbeelding:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="BackgroundImagePathTextBox" Text="{x:Bind BackgroundImagePath, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}" IsReadOnly="True"/>
+                        <Button Grid.Column="2" Content="Bladeren..." Click="BrowseBackgroundButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                    </Grid>
+                    <Button Content="Verwijder Achtergrond" Click="ResetBackgroundButton_Click" HorizontalAlignment="Left" Margin="0,5,0,10"/>
+                    <Image x:Name="BackgroundPreviewImage" MaxHeight="150" Stretch="Uniform" Margin="0,0,0,10" HorizontalAlignment="Left"/>
 
-                            <Button Grid.Column="1" 
-                                    x:Name="BrowseBackgroundButton"
-                                    Content="Browse..." 
-                                    Margin="8,0,0,0"
-                                    Click="BrowseBackgroundButton_Click"/>
-                        </Grid>
 
-                        <Grid ColumnDefinitions="Auto,*" Margin="0,8,0,0">
-                            <Border Grid.Column="0"
-                                    Width="100"
-                                    Height="60"
-                                    BorderBrush="{ThemeResource SystemControlForegroundBaseMediumLowBrush}"
-                                    BorderThickness="1"
-                                    Margin="0,0,12,0">
-                                <Image x:Name="BackgroundPreviewImage" Stretch="UniformToFill"/>
-                            </Border>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Photostrip afbeelding:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="PhotoStripFilePathTextBox" Text="{x:Bind BackgroundImagePath, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}" IsReadOnly="True"/>
+                        <Button Grid.Column="2" Content="Bladeren..." Click="BrowsePhotoStripFileButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                    </Grid>
+                    <Button Content="Verwijder Photostrip" Click="ResetPhotoStripButton_Click" HorizontalAlignment="Left" Margin="0,5,0,10"/>
+                    <Image x:Name="PhotoStripPreviewImage" MaxHeight="150" Stretch="Uniform" Margin="0,0,0,10" HorizontalAlignment="Left"/>
 
-                            <Button Grid.Column="1"
-                                    x:Name="ResetBackgroundButton"
-                                    Content="Reset to Default"
-                                    Click="ResetBackgroundButton_Click"
-                                    VerticalAlignment="Top"/>
-                        </Grid>
-                    </StackPanel>
+                    
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Titel Hoofdscherm:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="UiMainPageTitleTextTextBox" Text="{x:Bind LoadedSettingsModel.UiMainPageTitleText, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Subtitel Hoofdscherm:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="UiMainPageSubtitleTextTextBox" Text="{x:Bind LoadedSettingsModel.UiMainPageSubtitleText, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    
+                    <TextBlock Text="Fotosessie &amp; Review Scherm" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                    <ToggleSwitch Header="Review Layout" OffContent="Verticaal" OnContent="Horizontaal" IsOn="{x:Bind HorizontalReviewLayout, Mode=TwoWay}" Margin="0,5"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Timeout Review Scherm (sec):" Style="{StaticResource SettingLabelStyle}"/>
+                        <NumberBox Grid.Column="1" Value="{x:Bind ReviewPageTimeoutSeconds, Mode=TwoWay}" Minimum="0" Maximum="300" SmallChange="1" LargeChange="10" SpinButtonPlacementMode="Inline" Style="{StaticResource CustomNumberBoxStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Timeout QR Code Scherm (sec):" Style="{StaticResource SettingLabelStyle}"/>
+                        <NumberBox Grid.Column="1" Value="{x:Bind QrCodeTimeoutSeconds, Mode=TwoWay}" Minimum="0" Maximum="300" SmallChange="1" LargeChange="10" SpinButtonPlacementMode="Inline" Style="{StaticResource CustomNumberBoxStyle}"/>
+                    </Grid>
 
-                    <!-- Photo Strips -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Photo Strips" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Layout:" 
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0"/>
-
-                            <ComboBox Grid.Column="1"
-                                      x:Name="PhotoStripLayoutComboBox"
-                                      SelectedIndex="{x:Bind PhotoStripLayoutIndex, Mode=TwoWay}">
-                                <ComboBoxItem Content="Classic (4 vertical photos)"/>
-                                <ComboBoxItem Content="Modern (3 photos with text)"/>
-                                <ComboBoxItem Content="Collage (2x2 grid)"/>
-                                <ComboBoxItem Content="Custom"/>
-                            </ComboBox>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Template:" 
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0"/>
-
-                            <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
-                                <TextBox Grid.Column="0"
-                                         x:Name="PhotoStripTemplateTextBox"
-                                         PlaceholderText="Path to template file..."
-                                         IsReadOnly="True"
-                                         Text="{x:Bind PhotoStripTemplatePath, Mode=TwoWay}"/>
-
-                                <Button Grid.Column="1"
-                                        x:Name="BrowseTemplateButton"
-                                        Content="Browse..."
-                                        Margin="8,0,0,0"
-                                        Click="BrowseTemplateButton_Click"/>
-                            </Grid>
-                        </Grid>
-                    </StackPanel>
-
-                    <!-- Timeout Settings -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Home Screen Timeout" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Timeout:" 
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0"/>
-
-                            <Slider Grid.Column="1"
-                                    x:Name="TimeoutSlider"
-                                    Minimum="10"
-                                    Maximum="300"
-                                    StepFrequency="5"
-                                    TickFrequency="30"
-                                    TickPlacement="Outside"
-                                    Value="{x:Bind TimeoutSeconds, Mode=TwoWay}"/>
-
-                            <TextBlock Grid.Column="2"
-                                       Text="{x:Bind TimeoutSeconds, Mode=OneWay}"
-                                       Margin="12,0,0,0"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-
-                        <TextBlock Text="Seconds before returning to the welcome screen"
-                                   Opacity="0.7"
-                                   FontSize="12"/>
-                    </StackPanel>
+                    <TextBlock Text="Functionaliteit" Style="{StaticResource SectionHeaderStyle}"/>
+                    <ToggleSwitch Header="Foto's Inschakelen" IsOn="{x:Bind EnablePhotos, Mode=TwoWay}" Margin="0,5"/>
+                    <ToggleSwitch Header="Video's Inschakelen" IsOn="{x:Bind EnableVideos, Mode=TwoWay}" Margin="0,5"/>
+                    <ToggleSwitch Header="Afdrukken via Hot Folder Inschakelen" IsOn="{x:Bind EnablePrinting, Mode=TwoWay}" Margin="0,5"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Hot Folder Output Map:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="HotFolderPathTextBox" Text="{x:Bind HotFolderPath, Mode=TwoWay}" IsReadOnly="True" Style="{StaticResource SettingInputStyle}"/>
+                        <Button Grid.Column="2" Content="Selecteer Map..." Click="SelectHotFolderButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="DNP Printer Status JSON-bestand:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="DnpPrinterStatusFilePathTextBox" Text="{x:Bind DnpPrinterStatusFilePath, Mode=TwoWay}" IsReadOnly="True" Style="{StaticResource SettingInputStyle}"/>
+                        <Button Grid.Column="2" Content="Selecteer Bestand..." Click="SelectDnpStatusFileButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                    </Grid>
+                    <TextBlock x:Name="MediaWarningText" Text="Waarschuwing: Zowel foto's als video's zijn uitgeschakeld. Minimaal één moet ingeschakeld zijn." Foreground="Red" Visibility="Collapsed" Margin="0,5"/>
                 </StackPanel>
 
-                <!-- Functionality Section -->
-                <StackPanel>
-                    <TextBlock Text="Functionality" 
-                               FontSize="24" 
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,16"/>
+                <StackPanel x:Name="Column2StackPanel" Grid.Column="2" Grid.Row="0" DataContext="{x:Bind}">
+                    <TextBlock Text="Externe Apparatuur (MQTT Topics &amp; Levels)" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Licht Printer MQTT Topic:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.LightPrinterMqttTopic, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <TextBlock Text="Interne Verlichting:" Margin="0,10,0,5" FontWeight="SemiBold"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Topic Intern:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.InternalLightMqttTopic, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <TextBlock Text="Min. Niveau Intern:" Style="{StaticResource SettingLabelStyle}"/>
+                    <Slider Value="{x:Bind InternalLedsMinimum, Mode=TwoWay}" Minimum="0" Maximum="100" StepFrequency="1" Margin="0,0,0,5"/>
+                    <TextBlock Text="{x:Bind InternalLedsMinimum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}" HorizontalAlignment="Right"/>
+                    <TextBlock Text="Max. Niveau Intern:" Style="{StaticResource SettingLabelStyle}"/>
+                    <Slider Value="{x:Bind InternalLedsMaximum, Mode=TwoWay}" Minimum="0" Maximum="100" StepFrequency="1" Margin="0,0,0,5"/>
+                    <TextBlock Text="{x:Bind InternalLedsMaximum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}" HorizontalAlignment="Right"/>
 
-                    <!-- Media Options -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16" BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,16">
-                        <TextBlock Text="Media Options" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
+                    <TextBlock Text="DMX Verlichting:" Margin="0,10,0,5" FontWeight="SemiBold"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Topic DMX:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.DmxLightMqttTopic, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <TextBlock Text="Min. Niveau DMX:" Style="{StaticResource SettingLabelStyle}"/>
+                    <Slider Value="{x:Bind ExternalDmxMinimum, Mode=TwoWay}" Minimum="0" Maximum="100" StepFrequency="1" Margin="0,0,0,5"/>
+                    <TextBlock Text="{x:Bind ExternalDmxMinimum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}" HorizontalAlignment="Right"/>
+                    <TextBlock Text="Max. Niveau DMX:" Style="{StaticResource SettingLabelStyle}"/>
+                    <Slider Value="{x:Bind ExternalDmxMaximum, Mode=TwoWay}" Minimum="0" Maximum="100" StepFrequency="1" Margin="0,0,0,5"/>
+                    <TextBlock Text="{x:Bind ExternalDmxMaximum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}" HorizontalAlignment="Right"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="DMX Startadres:" Style="{StaticResource SettingLabelStyle}"/>
+                        <NumberBox Grid.Column="1" Value="{x:Bind DmxStartAddress, Mode=TwoWay}" Minimum="1" Maximum="512" SmallChange="1" LargeChange="1" SpinButtonPlacementMode="Inline" Style="{StaticResource CustomNumberBoxStyle}"/>
+                    </Grid>
 
-                        <CheckBox x:Name="EnablePhotoCheckBox"
-                                  Content="Enable Photos"
-                                  IsChecked="{x:Bind EnablePhotos, Mode=TwoWay}"
-                                  Checked="MediaOption_Changed"
-                                  Unchecked="MediaOption_Changed"/>
+                    <TextBlock Text="Externe Besturing &amp; Upload" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Broker Adres:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.MqttBrokerAddress, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Broker Poort:" Style="{StaticResource SettingLabelStyle}"/>
+                        <NumberBox Grid.Column="1" Value="{x:Bind LoadedSettingsModel.MqttBrokerPort, Mode=TwoWay}" Minimum="1" Maximum="65535" Style="{StaticResource CustomNumberBoxStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Gebruikersnaam:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.MqttUsername, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="MQTT Wachtwoord:" Style="{StaticResource SettingLabelStyle}"/>
+                        <PasswordBox Grid.Column="1" Password="{x:Bind LoadedSettingsModel.MqttPassword, Mode=TwoWay}" Style="{StaticResource CustomPasswordBoxStyle}"/>
+                    </Grid>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Afbeelding Upload URL:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.ImageUploadUrl, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
+                    </Grid>
+                    <ToggleSwitch Header="Remote Admin via MQTT" IsOn="{x:Bind LoadedSettingsModel.EnableRemoteAdminViaMqtt, Mode=TwoWay}" Margin="0,5"/>
 
-                        <CheckBox x:Name="EnableVideoCheckBox"
-                                  Content="Enable Videos"
-                                  IsChecked="{x:Bind EnableVideos, Mode=TwoWay}"
-                                  Margin="0,8,0,0"
-                                  Checked="MediaOption_Changed"
-                                  Unchecked="MediaOption_Changed"/>
-
-                        <TextBlock x:Name="MediaWarningText"
-                                   Foreground="Red"
-                                   Text="At least one media type must be enabled"
-                                   Visibility="Collapsed"
-                                   Margin="0,8,0,0"/>
-                    </StackPanel>
-
-                    <!-- Printing Options -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Printing Options" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <CheckBox x:Name="EnablePrintingCheckBox"
-                                  Content="Enable Printing"
-                                  IsChecked="{x:Bind EnablePrinting, Mode=TwoWay}"/>
-
-                        <CheckBox x:Name="ShowPrinterWarningsCheckBox"
-                                  Content="Show Printer Warnings"
-                                  IsChecked="{x:Bind ShowPrinterWarnings, Mode=TwoWay}"
-                                  IsEnabled="{x:Bind EnablePrinting, Mode=OneWay}"
-                                  Margin="24,8,0,0"/>
-
-                        <ComboBox Header="Default Printer:"
-                                  x:Name="PrinterSelectionComboBox"
-                                  Margin="0,8,0,0"
-                                  IsEnabled="{x:Bind EnablePrinting, Mode=OneWay}"
-                                  Width="300"
-                                  HorizontalAlignment="Left"
-                                  SelectionChanged="PrinterSelectionComboBox_SelectionChanged"/>
-                    </StackPanel>
+                    <TextBlock Text="Logging" Style="{StaticResource SectionHeaderStyle}"/>
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Log Niveau:" Style="{StaticResource SettingLabelStyle}"/>
+                        <ComboBox Grid.Column="1" x:Name="LogLevelComboBox" SelectedItem="{x:Bind LoadedSettingsModel.LogLevel, Mode=TwoWay}" Style="{StaticResource CustomComboBoxStyle}">
+                            <x:String>Verbose</x:String>
+                            <x:String>Debug</x:String>
+                            <x:String>Information</x:String>
+                            <x:String>Warning</x:String>
+                            <x:String>Error</x:String>
+                            <x:String>Fatal</x:String>
+                        </ComboBox>
+                    </Grid>
+                    <Button Content="Open Logs Map" Click="OpenLogsButton_Click" HorizontalAlignment="Left" Margin="0,10,0,0"/>
                 </StackPanel>
+            </Grid>
 
-                <!-- Lighting Section -->
-                <StackPanel>
-                    <TextBlock Text="Lighting" 
-                               FontSize="24" 
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,16"/>
-
-                    <!-- Internal LEDs -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Internal LEDs" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Minimum:" 
-                                       VerticalAlignment="Center"
-                                       Width="80"/>
-
-                            <Slider Grid.Column="1"
-                                    x:Name="InternalLedsMinSlider"
-                                    Minimum="0"
-                                    Maximum="100"
-                                    StepFrequency="1"
-                                    Value="{x:Bind InternalLedsMinimum, Mode=TwoWay}"/>
-
-                            <TextBlock Grid.Column="2"
-                                       Text="{x:Bind InternalLedsMinimum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}"
-                                       Width="50"
-                                       TextAlignment="Right"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Maximum:" 
-                                       VerticalAlignment="Center"
-                                       Width="80"/>
-
-                            <Slider Grid.Column="1"
-                                    x:Name="InternalLedsMaxSlider"
-                                    Minimum="0"
-                                    Maximum="100"
-                                    StepFrequency="1"
-                                    Value="{x:Bind InternalLedsMaximum, Mode=TwoWay}"/>
-
-                            <TextBlock Grid.Column="2"
-                                       Text="{x:Bind InternalLedsMaximum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}"
-                                       Width="50"
-                                       TextAlignment="Right"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-
-                    <!-- External DMX Spots -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="External DMX Spots" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Minimum:" 
-                                       VerticalAlignment="Center"
-                                       Width="80"/>
-
-                            <Slider Grid.Column="1"
-                                    x:Name="ExternalDmxMinSlider"
-                                    Minimum="0"
-                                    Maximum="100"
-                                    StepFrequency="1"
-                                    Value="{x:Bind ExternalDmxMinimum, Mode=TwoWay}"/>
-
-                            <TextBlock Grid.Column="2"
-                                       Text="{x:Bind ExternalDmxMinimum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}"
-                                       Width="50"
-                                       TextAlignment="Right"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="Maximum:" 
-                                       VerticalAlignment="Center"
-                                       Width="80"/>
-
-                            <Slider Grid.Column="1"
-                                    x:Name="ExternalDmxMaxSlider"
-                                    Minimum="0"
-                                    Maximum="100"
-                                    StepFrequency="1"
-                                    Value="{x:Bind ExternalDmxMaximum, Mode=TwoWay}"/>
-
-                            <TextBlock Grid.Column="2"
-                                       Text="{x:Bind ExternalDmxMaximum, Mode=OneWay, Converter={StaticResource IntToPercentConverter}}"
-                                       Width="50"
-                                       TextAlignment="Right"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-
-                    <!-- Serial Port Settings -->
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Serial Port Settings" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,8">
-                            <TextBlock Grid.Column="0" 
-                                       Text="COM Port:" 
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0"
-                                       Width="80"/>
-
-                            <ComboBox Grid.Column="1"
-                                      x:Name="ComPortComboBox"
-                                      Width="200"
-                                      HorizontalAlignment="Left"
-                                      SelectionChanged="ComPortComboBox_SelectionChanged"/>
-                        </Grid>
-
-                        <Button x:Name="RefreshPortsButton"
-                                Content="Refresh Available Ports"
-                                Click="RefreshPortsButton_Click"
-                                Margin="92,0,0,0"/>
-
-                        <Button x:Name="TestLightsButton"
-                                Content="Test Lights"
-                                Click="TestLightsButton_Click"
-                                Margin="92,8,0,0"/>
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Diagnostics Section (NEW) -->
-                <StackPanel>
-                    <TextBlock Text="Diagnostics" 
-                               FontSize="24" 
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,16"/>
-
-                    <!-- Logs Section -->
-                    <StackPanel Spacing="8" Margin="0,0,0,16">
-                        <TextBlock Text="Application Logs" 
-                                   FontSize="16" 
-                                   FontWeight="Medium"/>
-
-                        <TextBlock Text="View application logs to troubleshoot issues"
-                                   Opacity="0.7"
-                                   Margin="0,0,0,8"/>
-
-                        <Button x:Name="OpenLogsButton"
-                            Click="OpenLogsButton_Click"
-                            HorizontalAlignment="Left">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE132;" />
-                                <TextBlock Text="Open Logs Directory" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,30,0,0">
+                <Button x:Name="SaveButton" Content="Opslaan" Click="SaveButton_Click" Margin="0,0,10,0" Style="{StaticResource AccentButtonStyle}"/>
+                <Button x:Name="CancelButton" Content="Annuleren" Click="CancelButton_Click"/>
             </StackPanel>
-        </ScrollViewer>
-
-        <!-- Footer with Save/Cancel Buttons -->
-        <Grid Grid.Row="2" 
-              Margin="0,20,0,0"
-              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" 
-              BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
-              BorderThickness="0,1,0,0"
-              Padding="0,20,0,0">
-            <StackPanel Orientation="Horizontal" 
-                        HorizontalAlignment="Right" 
-                        Spacing="12">
-                <Button x:Name="CancelButton" 
-                        Content="Cancel" 
-                        Click="CancelButton_Click"/>
-
-                <Button x:Name="SaveButton" 
-                        Content="Save Settings" 
-                        Style="{StaticResource AccentButtonStyle}"
-                        Click="SaveButton_Click"/>
-            </StackPanel>
-        </Grid>
-    </Grid>
+            <TextBlock x:Name="DebugTextBlock" Margin="0,20,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
 </Page>
