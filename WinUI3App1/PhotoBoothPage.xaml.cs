@@ -7,6 +7,10 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Serilog;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -14,6 +18,8 @@ using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage;
 using WinUI3App1;
+using Path = System.IO.Path;
+using System.Linq;
 
 namespace WinUI3App
 {
@@ -21,15 +27,16 @@ namespace WinUI3App
     {
         private int _photosTaken = 0;
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
-        private List<string> _photoPaths = new List<string>();
+        private List<string> _photoPaths = new List<string>(); // contains the paths of the taken individual photos
         private const string PLACEHOLDER_IMAGE_PATH = "ms-appx:///Assets/placeholder.jpg";
-        
+
         // Color of the dots
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
         private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
         private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
-        
+
         private DispatcherTimer _reviewPageTimeoutTimer;
+
 
         public PhotoBoothPage()
         {
@@ -107,7 +114,7 @@ namespace WinUI3App
         private async Task LoadPageBackgroundAsync()
         {
             App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);
-            var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Image;
+            var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Microsoft.UI.Xaml.Controls.Image;
             var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
 
             if (pageBackgroundImageControl == null)
@@ -168,29 +175,29 @@ namespace WinUI3App
             _photoPaths.Clear();
 
             InstructionTextBackground.Opacity = 0;
-            CountdownTextBackground.Opacity = 0; 
+            CountdownTextBackground.Opacity = 0;
             CountdownText.Text = "";
-            TakenPhotoImage.Source = null; 
+            TakenPhotoImage.Source = null;
             TakenPhotoImage.Opacity = 0;
-            if (TakenPhotoImage.RenderTransform is ScaleTransform st) 
-            { 
-                st.ScaleX = 0.5; st.ScaleY = 0.5; 
+            if (TakenPhotoImage.RenderTransform is ScaleTransform st)
+            {
+                st.ScaleX = 0.5; st.ScaleY = 0.5;
             }
-            else 
-            { 
-                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 }; 
-                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5); 
+            else
+            {
+                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
             }
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
 
-            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
             HorizontalPhotoGalleryContainer.Opacity = 0;
 
             VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
             VerticalPhotoGalleryContainer.Opacity = 0;
 
-            ActionButtonsPanel.Visibility = Visibility.Collapsed; 
+            ActionButtonsPanel.Visibility = Visibility.Collapsed;
             ActionButtonsPanel.Opacity = 0;
             OverlayGrid.Visibility = Visibility.Collapsed;
 
@@ -202,9 +209,9 @@ namespace WinUI3App
         private async Task StartPhotoProcedure()
         {
             App.Logger.Information("Starting photo procedure...");
-            
+
             // Make ProgressIndicatorPanel visible with pending dots
-            ResetProcedure(); 
+            ResetProcedure();
 
             App.State = App.PhotoBoothState.ShowingInstructions;
             await ShowInstructions();
@@ -251,11 +258,13 @@ namespace WinUI3App
             App.Logger.Debug("Starting countdown...");
 
             // If this is the first photo, show the camera placeholder image
-            if (_photosTaken == 0) { 
-                CameraPlaceholderImage.Visibility = Visibility.Visible; 
+            if (_photosTaken == 0)
+            {
+                CameraPlaceholderImage.Visibility = Visibility.Visible;
             }
-            else { 
-                CameraPlaceholderImage.Visibility = Visibility.Collapsed; 
+            else
+            {
+                CameraPlaceholderImage.Visibility = Visibility.Collapsed;
             }
             TakenPhotoImage.Opacity = 0;
 
@@ -443,7 +452,7 @@ namespace WinUI3App
 
             // Bepaal welke galerij en welke image controls te gebruiken
             Viewbox activeGalleryContainer;
-            Image reviewPhoto1, reviewPhoto2, reviewPhoto3;
+            Microsoft.UI.Xaml.Controls.Image reviewPhoto1, reviewPhoto2, reviewPhoto3;
 
             if (useHorizontalLayout)
             {
@@ -511,7 +520,7 @@ namespace WinUI3App
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
         {
             // Review timer is stopped when the user interacts with the accept button
-            _reviewPageTimeoutTimer.Stop(); 
+            _reviewPageTimeoutTimer.Stop();
             App.Logger?.Debug("PhotoBoothPage: Accept button clicked, review timeout timer stopped.");
 
             // Handle the accept button click event
@@ -525,8 +534,8 @@ namespace WinUI3App
             // Proceed to save the photos
             App.State = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
-            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
-            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
             ActionButtonsPanel.Visibility = Visibility.Collapsed;
 
             #region Fade-in of overlay
@@ -552,7 +561,40 @@ namespace WinUI3App
             #endregion
 
             // Simulate saving process 
-            await Task.Delay(1000); // Original delay
+            #region Merge and save
+            App.Logger?.Information("PhotoBoothPage: Starting photo processing and merging after user accept.");
+            string finalImagePath = null; // Om het pad naar de samengevoegde afbeelding op te vangen
+
+            // Zorg ervoor dat _photoPaths correct gevuld is met de paden naar de 3 genomen foto's
+            // en dat de template pad in settings beschikbaar is.
+            if (App.CurrentSettings != null &&
+                !string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath) &&
+                _photoPaths != null &&
+                _photoPaths.Count == TOTAL_PHOTOS_TO_TAKE &&
+                _photoPaths.All(p => !string.IsNullOrEmpty(p) && File.Exists(p))) // Controleer of alle paden valide zijn en bestaan
+            {
+                // Roep de nieuwe methode aan
+                finalImagePath = await ProcessAndMergePhotosAsync(App.CurrentSettings.PhotoStripFilePath, _photoPaths);
+            }
+            else
+            {
+                App.Logger?.Error("PhotoBoothPage: Cannot start merge process. Conditions not met (Settings, TemplatePath, or PhotoPaths invalid/incomplete).");
+                if (App.CurrentSettings == null) App.Logger?.Error(" - App.CurrentSettings is null.");
+                if (App.CurrentSettings != null && string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath)) App.Logger?.Error(" - PhotoStripFilePath is empty.");
+                if (_photoPaths == null) App.Logger?.Error(" - _photoPaths is null.");
+                if (_photoPaths != null && _photoPaths.Count != TOTAL_PHOTOS_TO_TAKE) App.Logger?.Error(" - _photoPaths count is not {TOTAL_PHOTOS_TO_TAKE}. Actual: {_photoPaths.Count}");
+                if (_photoPaths != null)
+                {
+                    for (int i = 0; i < _photoPaths.Count; i++)
+                    {
+                        if (string.IsNullOrEmpty(_photoPaths[i]) || !File.Exists(_photoPaths[i]))
+                        {
+                            App.Logger?.Error($" - _photoPaths[{i}] is invalid or file does not exist: '{_photoPaths[i]}'");
+                        }
+                    }
+                }
+            }
+            #endregion
 
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
             await Task.Delay(1500); // Original delay
@@ -694,5 +736,159 @@ namespace WinUI3App
             #endregion
         }
 
+        private async Task<string> ProcessAndMergePhotosAsync(string templateImagePath, List<string> individualPhotoPaths)
+        {
+            if (string.IsNullOrEmpty(templateImagePath) || !File.Exists(templateImagePath))
+            {
+                App.Logger?.Error("ImageProcessing: Template image path is invalid or file does not exist: {TemplatePath}", templateImagePath);
+                return null;
+            }
+
+            if (individualPhotoPaths == null || individualPhotoPaths.Count != TOTAL_PHOTOS_TO_TAKE)
+            {
+                App.Logger?.Error("ImageProcessing: Incorrect number of photo paths provided. Expected {ExpectedCount}, got {ActualCount}.", TOTAL_PHOTOS_TO_TAKE, individualPhotoPaths?.Count ?? 0);
+                return null;
+            }
+
+            foreach (var photoPath in individualPhotoPaths)
+            {
+                if (string.IsNullOrEmpty(photoPath) || !File.Exists(photoPath))
+                {
+                    App.Logger?.Error("ImageProcessing: A provided photo path is invalid or file does not exist: {PhotoPath}", photoPath);
+                    return null;
+                }
+            }
+
+            string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+            // Output folder: Gebruik Environment.GetFolderPath voor bekende mappen
+            string picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            string outputBaseFolderPath = Path.Combine(picturesPath, "PhotoBoothAppOutput");
+
+            // Zorg ervoor dat de output map bestaat
+            try
+            {
+                Directory.CreateDirectory(outputBaseFolderPath); // Maakt de map aan als deze niet bestaat, doet niets als hij wel bestaat.
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "ImageProcessing: Failed to create output directory: {OutputDirectory}", outputBaseFolderPath);
+                return null;
+            }
+
+            App.Logger?.Information("ImageProcessing: Starting merge. Template: {TemplatePath}. Output will be in: {OutputDirectory}", templateImagePath, outputBaseFolderPath);
+
+            try
+            {
+                // Laad de template afbeelding
+                using SixLabors.ImageSharp.Image<Rgba32> templateImage = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(templateImagePath);
+                App.Logger?.Debug("ImageProcessing: Template image '{TemplateName}' loaded ({Width}x{Height}).", Path.GetFileName(templateImagePath), templateImage.Width, templateImage.Height);
+
+                // Laad de drie genomen foto's
+                // We maken een lijst van de Image objecten zodat we ze kunnen disposen in een finally block of na gebruik
+                var sourceImagesToProcess = new List<Image<Rgba32>>(TOTAL_PHOTOS_TO_TAKE);
+                try
+                {
+                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[0]));
+                    App.Logger?.Debug("ImageProcessing: Photo 1 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[0]));
+                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[1]));
+                    App.Logger?.Debug("ImageProcessing: Photo 2 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[1]));
+                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[2]));
+                    App.Logger?.Debug("ImageProcessing: Photo 3 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[2]));
+
+                    // ----- BEGIN VAN JOUW SPECIFIEKE MERGE LOGICA -----
+                    // Dit deel moet je overnemen en aanpassen uit je oude PhotoMain.xaml.cs
+                    // Het volgende is een ZEER generiek voorbeeld en moet vervangen worden.
+                    // Gebruik de 'sourceImagesToProcess' lijst.
+
+                    // Voorbeeld: Afmetingen en posities (VERVANG DIT MET JOUW LOGICA)
+                    var photoPositions = new[]
+                    {
+                        new { X = 50, Y = 100, Width = 300, Height = 200 },
+                        new { X = 50, Y = 350, Width = 300, Height = 200 },
+                        new { X = 50, Y = 600, Width = 300, Height = 200 }
+                    };
+
+                    for (int i = 0; i < sourceImagesToProcess.Count; i++)
+                    {
+                        var currentPhoto = sourceImagesToProcess[i];
+                        var position = photoPositions[i];
+
+                        // Optioneel: Croppen
+                        // currentPhoto.Mutate(x => x.Crop(new Rectangle(cropX, cropY, targetCropWidth, targetCropHeight)));
+
+                        // Resizen
+                        currentPhoto.Mutate(x => x.Resize(position.Width, position.Height, KnownResamplers.Lanczos3));
+                        App.Logger?.Debug($"ImageProcessing: Photo {i + 1} resized to {position.Width}x{position.Height}.");
+
+                        // Teken op template
+                        templateImage.Mutate(x => x.DrawImage(currentPhoto, new SixLabors.ImageSharp.Point(position.X, position.Y), 1f));
+                        App.Logger?.Debug($"ImageProcessing: Photo {i + 1} drawn onto template at ({position.X},{position.Y}).");
+                    }
+                    // ----- EINDE VAN JOUW SPECIFIEKE MERGE LOGICA -----
+                }
+                finally
+                {
+                    // Zorg ervoor dat de geladen bronafbeeldingen worden gedisposed
+                    foreach (var img in sourceImagesToProcess)
+                    {
+                        img?.Dispose();
+                    }
+                }
+
+
+                // Opslaan van de samengevoegde afbeelding
+                string outputFileName = $"{filenamePrepend}_PhotoStrip.jpg";
+                string finalOutputPath = Path.Combine(outputBaseFolderPath, outputFileName);
+
+                var jpegEncoder = new JpegEncoder { Quality = 90 }; // Waarde tussen 1 en 100
+                await templateImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder); // Sla direct op naar pad
+
+                App.Logger?.Information("ImageProcessing: Final merged photo strip saved to: {OutputPath}", finalOutputPath);
+
+                // Kopiëren naar Hot Folder indien ingeschakeld en pad geconfigureerd
+                if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                {
+                    string hotFolderPathString = App.CurrentSettings.HotFolderPath;
+                    try
+                    {
+                        if (Directory.Exists(hotFolderPathString)) // Controleer of de doelmap bestaat
+                        {
+                            string destinationHotFilePath = Path.Combine(hotFolderPathString, Path.GetFileName(finalOutputPath));
+                            // Genereer een unieke naam in de hot folder om overschrijven te voorkomen,
+                            // of overschrijf als dat de bedoeling is.
+                            int attempt = 0;
+                            string tempDestPath = destinationHotFilePath;
+                            while (File.Exists(tempDestPath))
+                            {
+                                attempt++;
+                                tempDestPath = Path.Combine(hotFolderPathString, $"{Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{Path.GetExtension(finalOutputPath)}");
+                            }
+                            destinationHotFilePath = tempDestPath;
+
+                            File.Copy(finalOutputPath, destinationHotFilePath);
+                            App.Logger?.Information("ImageProcessing: Merged photo strip copied to hot folder: {CopiedPath}", destinationHotFilePath);
+                        }
+                        else
+                        {
+                            App.Logger?.Warning("ImageProcessing: Hot folder path does not exist, cannot copy: {HotFolderPath}", hotFolderPathString);
+                        }
+                    }
+                    catch (Exception ex) // Vangt bredere exceptions op voor IO
+                    {
+                        App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
+                    }
+                }
+
+                return finalOutputPath; // Geef het pad naar de opgeslagen strip terug
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "ImageProcessing: A critical error occurred during the image merging process.");
+                return null;
+            }
+            // Dispose van templateImage gebeurt door de 'using' statement aan het begin van de try-block.
+
+        }
     }
 }
