@@ -71,6 +71,10 @@ namespace WinUI3App
 
 
             LoadDynamicUITexts();
+
+            // Configure photo/video buttons based on settings
+            ConfigureButtons();
+
             await LoadPageBackgroundAsync();
 
 
@@ -107,6 +111,27 @@ namespace WinUI3App
             // Set focus for listening to keyboard 'S' press
             this.Focus(FocusState.Programmatic);
 
+        }
+
+        private void ConfigureButtons()
+        {
+            App.Logger?.Verbose("MainPage: Configuring buttons based on settings.");
+
+            if (App.CurrentSettings != null)
+            {
+                TakePhotoButton.IsEnabled = App.CurrentSettings.EnablePhotos;
+                TakePhotoButton.Visibility = App.CurrentSettings.EnablePhotos ? Visibility.Visible : Visibility.Collapsed;
+
+                RecordVideoButton.IsEnabled = App.CurrentSettings.EnableVideos;
+                RecordVideoButton.Visibility = App.CurrentSettings.EnableVideos ? Visibility.Visible : Visibility.Collapsed;
+
+                App.Logger?.Debug("MainPage: Buttons configured based on settings. Photos: {0}, Videos: {1}",
+                    App.CurrentSettings.EnablePhotos, App.CurrentSettings.EnableVideos);
+            }
+            else
+            {
+                App.Logger?.Warning("MainPage: App.CurrentSettings is null. Buttons will be enabled by default.");
+            }
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
