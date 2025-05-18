@@ -173,7 +173,13 @@ namespace WinUI3App
             else { TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 }; TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5); }
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
-            PhotoGallery.Visibility = Visibility.Collapsed; PhotoGallery.Opacity = 0;
+
+            HorizontalPhotoGallery.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGallery.Opacity = 0;
+
+            VerticalPhotoGallery.Visibility = Visibility.Collapsed;
+            VerticalPhotoGallery.Opacity = 0;
+
             ActionButtonsPanel.Visibility = Visibility.Collapsed; ActionButtonsPanel.Opacity = 0;
             OverlayGrid.Visibility = Visibility.Collapsed;
 
@@ -207,7 +213,8 @@ namespace WinUI3App
             UpdateProgressIndicator(0, false); // Show 3 pending dots
 
             CaptureElementsViewbox.Visibility = Visibility.Visible;
-            PhotoGallery.Visibility = Visibility.Collapsed;
+            HorizontalPhotoGallery.Visibility = Visibility.Collapsed;
+            VerticalPhotoGallery.Visibility = Visibility.Collapsed;
 
             var fadeInAnimation = new DoubleAnimation
             { To = 1.0, Duration = TimeSpan.FromSeconds(1), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
@@ -286,7 +293,9 @@ namespace WinUI3App
 
                 App.State = App.PhotoBoothState.Countdown;
                 CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
-                PhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+
+                HorizontalPhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+                VerticalPhotoGallery.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
 
                 UpdateProgressIndicator(_photosTaken, true);
                 ProgressIndicatorPanel.Visibility = Visibility.Visible; // Make sure dots are shown
@@ -411,40 +420,81 @@ namespace WinUI3App
         private async Task ShowAllPhotosForReview()
         {
             App.State = App.PhotoBoothState.ReviewingPhotos;
+            App.Logger?.Debug("PhotoBoothPage: Showing photos for review.");
 
-            // Hide elements related to individual capture/preview
             CaptureElementsViewbox.Visibility = Visibility.Collapsed;
             TakenPhotoImage.Opacity = 0;
+            ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
 
-            // Update the dots to reflect all are completed (optional, as panel will be hidden)
-            // UpdateProgressIndicator(TOTAL_PHOTOS_TO_TAKE, false); 
+            bool useHorizontalLayout = App.CurrentSettings?.HorizontalReviewLayout ?? true; // Default naar horizontaal als setting niet bestaat
+            App.Logger?.Information("PhotoBoothPage: Review layout will be {Layout}. HorizontalReviewLayout setting is {SettingValue}",
+                useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.HorizontalReviewLayout);
 
-            // Hide the progress dots panel for the final gallery review
-            ProgressIndicatorPanel.Visibility = Visibility.Collapsed; 
+            // Bepaal welke galerij en welke image controls te gebruiken
+            StackPanel activeGallery;
+            Image reviewPhoto1, reviewPhoto2, reviewPhoto3;
 
-            // Populate and show the final photo gallery
-            if (_photoPaths.Count > 0) Photo1Image.Source = new BitmapImage(new Uri(_photoPaths[0])); else Photo1Image.Source = null;
-            if (_photoPaths.Count > 1) Photo2Image.Source = new BitmapImage(new Uri(_photoPaths[1])); else Photo2Image.Source = null;
-            if (_photoPaths.Count > 2) Photo3Image.Source = new BitmapImage(new Uri(_photoPaths[2])); else Photo3Image.Source = null;
+            if (useHorizontalLayout)
+            {
+                activeGallery = HorizontalPhotoGallery;
+                VerticalPhotoGallery.Visibility = Visibility.Collapsed; // Verberg de andere
+                reviewPhoto1 = H_Photo1Image;
+                reviewPhoto2 = H_Photo2Image;
+                reviewPhoto3 = H_Photo3Image;
+                App.Logger?.Debug("PhotoBoothPage: Using HorizontalPhotoGallery.");
+            }
+            else
+            {
+                activeGallery = VerticalPhotoGallery;
+                HorizontalPhotoGallery.Visibility = Visibility.Collapsed; // Verberg de andere
+                reviewPhoto1 = V_Photo1Image;
+                reviewPhoto2 = V_Photo2Image;
+                reviewPhoto3 = V_Photo3Image;
+                App.Logger?.Debug("PhotoBoothPage: Using VerticalPhotoGallery.");
+            }
 
-            PhotoGallery.Opacity = 0;
-            ActionButtonsPanel.Opacity = 0;
-            PhotoGallery.Visibility = Visibility.Visible;
+            // Reset de bronnen voor het geval er minder dan 3 foto's zijn
+            reviewPhoto1.Source = null;
+            reviewPhoto2.Source = null;
+            reviewPhoto3.Source = null;
+
+            // Populate de actieve galerij
+            if (_photoPaths.Count > 0 && !string.IsNullOrEmpty(_photoPaths[0]))
+                reviewPhoto1.Source = new BitmapImage(new Uri(_photoPaths[0]));
+            else
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 1 is leeg of null.");
+
+            if (_photoPaths.Count > 1 && !string.IsNullOrEmpty(_photoPaths[1]))
+                reviewPhoto2.Source = new BitmapImage(new Uri(_photoPaths[1]));
+            else if (_photoPaths.Count > 1)
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 2 is leeg of null.");
+
+
+            if (_photoPaths.Count > 2 && !string.IsNullOrEmpty(_photoPaths[2]))
+                reviewPhoto3.Source = new BitmapImage(new Uri(_photoPaths[2]));
+            else if (_photoPaths.Count > 2)
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 3 is leeg of null.");
+
+
+            activeGallery.Opacity = 0;
+            ActionButtonsPanel.Opacity = 0; // Knoppen blijven hetzelfde
+            activeGallery.Visibility = Visibility.Visible;
             ActionButtonsPanel.Visibility = Visibility.Visible;
 
-            // Animation for gallery and buttons
+            // Animatie voor galerij en knoppen
             var galleryFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
-            Storyboard.SetTarget(galleryFadeIn, PhotoGallery); Storyboard.SetTargetProperty(galleryFadeIn, "Opacity");
+            Storyboard.SetTarget(galleryFadeIn, activeGallery); Storyboard.SetTargetProperty(galleryFadeIn, "Opacity");
+
             var buttonsFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
             Storyboard.SetTarget(buttonsFadeIn, ActionButtonsPanel); Storyboard.SetTargetProperty(buttonsFadeIn, "Opacity");
+
             Storyboard reviewSb = new Storyboard();
-            reviewSb.Children.Add(galleryFadeIn); reviewSb.Children.Add(buttonsFadeIn);
+            reviewSb.Children.Add(galleryFadeIn);
+            reviewSb.Children.Add(buttonsFadeIn);
             reviewSb.Begin();
 
-            // Start the inactivity timer
-            _reviewPageTimeoutTimer.Start();
-
-            await Task.CompletedTask;
+            _reviewPageTimeoutTimer.Start(); // Start inactiviteitstimer
+            // await Task.CompletedTask; // Niet meer nodig als de methode async void is, maar kan geen kwaad
         }
 
         private async void AcceptButton_Click(object sender, RoutedEventArgs e)
@@ -464,7 +514,8 @@ namespace WinUI3App
             // Proceed to save the photos
             App.State = App.PhotoBoothState.Saving;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
-            PhotoGallery.Visibility = Visibility.Collapsed; 
+            HorizontalPhotoGallery.Visibility = Visibility.Collapsed; 
+            VerticalPhotoGallery.Visibility = Visibility.Collapsed; 
             ActionButtonsPanel.Visibility = Visibility.Collapsed;
 
             #region Fade-in of overlay

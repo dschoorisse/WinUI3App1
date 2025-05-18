@@ -46,16 +46,28 @@
                         </Grid>
                     </Viewbox>
 
-                    <StackPanel x:Name="PhotoGallery"
-                                Orientation="Vertical" 
+                    <StackPanel x:Name="HorizontalPhotoGallery"
+                                Orientation="Horizontal"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
-                                Spacing="10" 
+                                Spacing="10"
                                 Visibility="Collapsed" Opacity="0">
-                        <Image x:Name="Photo1Image" Width="320" Height="240" Stretch="UniformToFill" />
-                        <Image x:Name="Photo2Image" Width="320" Height="240" Stretch="UniformToFill" />
-                        <Image x:Name="Photo3Image" Width="320" Height="240" Stretch="UniformToFill" />
+                        <Image x:Name="H_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
+                        <Image x:Name="H_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
+                        <Image x:Name="H_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
                     </StackPanel>
+
+                    <StackPanel x:Name="VerticalPhotoGallery"
+                                Orientation="Vertical"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="10"
+                                Visibility="Collapsed" Opacity="0">
+                        <Image x:Name="V_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
+                        <Image x:Name="V_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
+                        <Image x:Name="V_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
+                    </StackPanel>
+                    
                 </Grid>
 
                 <StackPanel x:Name="ProgressIndicatorPanel"
