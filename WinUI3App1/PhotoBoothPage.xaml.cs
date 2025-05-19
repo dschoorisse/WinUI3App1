@@ -17,6 +17,7 @@ using System.IO;
 using System.Threading.Tasks;
 using WinUI3App1;
 using System.Linq;
+using Rectangle = SixLabors.ImageSharp.Rectangle;
 
 namespace WinUI3App
 {
@@ -745,11 +746,12 @@ namespace WinUI3App
             #endregion
         }
 
-        private async Task<string> ProcessAndMergePhotosAsync(string templateImagePath, List<string> individualPhotoPaths)
+        private async Task<string> ProcessAndMergePhotosAsync(string templateOverlayPath, List<string> individualPhotoPaths)
         {
-            if (string.IsNullOrEmpty(templateImagePath) || !File.Exists(templateImagePath))
+            #region Check inputs
+            if (string.IsNullOrEmpty(templateOverlayPath) || !File.Exists(templateOverlayPath))
             {
-                App.Logger?.Error("ImageProcessing: Template image path is invalid or file does not exist: {TemplatePath}", templateImagePath);
+                App.Logger?.Error("ImageProcessing: Template overlay path is invalid or file does not exist: {TemplatePath}", templateOverlayPath);
                 return null;
             }
 
@@ -767,137 +769,188 @@ namespace WinUI3App
                     return null;
                 }
             }
+            #endregion
 
             string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-
-            // Output folder: Gebruik Environment.GetFolderPath voor bekende mappen
             string picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             string outputBaseFolderPath = System.IO.Path.Combine(picturesPath, "PhotoBoothAppOutput");
+            Directory.CreateDirectory(outputBaseFolderPath);
 
-            // Zorg ervoor dat de output map bestaat
-            try
-            {
-                Directory.CreateDirectory(outputBaseFolderPath); // Maakt de map aan als deze niet bestaat, doet niets als hij wel bestaat.
-            }
-            catch (Exception ex)
-            {
-                App.Logger?.Error(ex, "ImageProcessing: Failed to create output directory: {OutputDirectory}", outputBaseFolderPath);
-                return null;
-            }
-
-            App.Logger?.Information("ImageProcessing: Starting merge. Template: {TemplatePath}. Output will be in: {OutputDirectory}", templateImagePath, outputBaseFolderPath);
+            App.Logger?.Information("ImageProcessing: Starting merge with overlay. Template: {TemplatePath}. Output base: {OutputDirectory}", templateOverlayPath, outputBaseFolderPath);
 
             try
             {
-                // Laad de template afbeelding
-                using SixLabors.ImageSharp.Image<Rgba32> templateImage = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(templateImagePath);
-                App.Logger?.Debug("ImageProcessing: Template image '{TemplateName}' loaded ({Width}x{Height}).", System.IO.Path.GetFileName(templateImagePath), templateImage.Width, templateImage.Height);
+                // 1. Laad de PNG-template (overlay)
+                using SixLabors.ImageSharp.Image<Rgba32> overlayTemplateImage = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(templateOverlayPath);
+                App.Logger?.Debug("ImageProcessing: PNG Overlay Template '{TemplateName}' loaded ({Width}x{Height}).", System.IO.Path.GetFileName(templateOverlayPath), overlayTemplateImage.Width, overlayTemplateImage.Height);
 
-                // Laad de drie genomen foto's
-                // We maken een lijst van de Image objecten zodat we ze kunnen disposen in een finally block of na gebruik
-                var sourceImagesToProcess = new List<Image<Rgba32>>(TOTAL_PHOTOS_TO_TAKE);
-                try
+                // Controleer of de template de verwachte afmetingen heeft (1200x3600)
+                if (overlayTemplateImage.Width != 1200 || overlayTemplateImage.Height != 3600)
                 {
-                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[0]));
-                    App.Logger?.Debug("ImageProcessing: Photo 1 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[0]));
-                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[1]));
-                    App.Logger?.Debug("ImageProcessing: Photo 2 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[1]));
-                    sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[2]));
-                    App.Logger?.Debug("ImageProcessing: Photo 3 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[2]));
-
-                    // ----- BEGIN VAN JOUW SPECIFIEKE MERGE LOGICA -----
-                    // Dit deel moet je overnemen en aanpassen uit je oude PhotoMain.xaml.cs
-                    // Het volgende is een ZEER generiek voorbeeld en moet vervangen worden.
-                    // Gebruik de 'sourceImagesToProcess' lijst.
-
-                    // Voorbeeld: Afmetingen en posities (VERVANG DIT MET JOUW LOGICA)
-                    var photoPositions = new[]
-                    {
-                        new { X = 50, Y = 100, Width = 300, Height = 200 },
-                        new { X = 50, Y = 350, Width = 300, Height = 200 },
-                        new { X = 50, Y = 600, Width = 300, Height = 200 }
-                    };
-
-                    for (int i = 0; i < sourceImagesToProcess.Count; i++)
-                    {
-                        var currentPhoto = sourceImagesToProcess[i];
-                        var position = photoPositions[i];
-
-                        // Optioneel: Croppen
-                        // currentPhoto.Mutate(x => x.Crop(new Rectangle(cropX, cropY, targetCropWidth, targetCropHeight)));
-
-                        // Resizen
-                        currentPhoto.Mutate(x => x.Resize(position.Width, position.Height, KnownResamplers.Lanczos3));
-                        App.Logger?.Debug($"ImageProcessing: Photo {i + 1} resized to {position.Width}x{position.Height}.");
-
-                        // Teken op template
-                        templateImage.Mutate(x => x.DrawImage(currentPhoto, new SixLabors.ImageSharp.Point(position.X, position.Y), 1f));
-                        App.Logger?.Debug($"ImageProcessing: Photo {i + 1} drawn onto template at ({position.X},{position.Y}).");
-                    }
-                    // ----- EINDE VAN JOUW SPECIFIEKE MERGE LOGICA -----
-                }
-                finally
-                {
-                    // Zorg ervoor dat de geladen bronafbeeldingen worden gedisposed
-                    foreach (var img in sourceImagesToProcess)
-                    {
-                        img?.Dispose();
-                    }
+                    App.Logger?.Warning("ImageProcessing: Template dimensions ({ActualWidth}x{ActualHeight}) do not match expected 1200x3600. Results may vary.", overlayTemplateImage.Width, overlayTemplateImage.Height);
+                    // Je kunt hier besluiten om te stoppen of door te gaan en de template afmetingen te gebruiken.
+                    // Voor nu gaan we door met de daadwerkelijke afmetingen van de geladen template.
                 }
 
-
-                // Opslaan van de samengevoegde afbeelding
-                string outputFileName = $"{filenamePrepend}_PhotoStrip.jpg";
-                string finalOutputPath = System.IO.Path.Combine(outputBaseFolderPath, outputFileName);
-
-                var jpegEncoder = new JpegEncoder { Quality = 90 }; // Waarde tussen 1 en 100
-                await templateImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder); // Sla direct op naar pad
-
-                App.Logger?.Information("ImageProcessing: Final merged photo strip saved to: {OutputPath}", finalOutputPath);
-
-                // Kopiëren naar Hot Folder indien ingeschakeld en pad geconfigureerd
-                if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                // 2. Maak een leeg canvas met de afmetingen van de template
+                using (var photoCanvasImage = new Image<Rgba32>(overlayTemplateImage.Width, overlayTemplateImage.Height))
                 {
-                    string hotFolderPathString = App.CurrentSettings.HotFolderPath;
+                    App.Logger?.Debug("ImageProcessing: Created photo canvas ({Width}x{Height}).", photoCanvasImage.Width, photoCanvasImage.Height);
+
+                    // 3. Laad en verwerk de drie genomen foto's
+                    var sourceImages = new List<Image<Rgba32>>(TOTAL_PHOTOS_TO_TAKE);
                     try
                     {
-                        if (Directory.Exists(hotFolderPathString)) // Controleer of de doelmap bestaat
+                        for (int i = 0; i < TOTAL_PHOTOS_TO_TAKE; i++)
                         {
-                            string destinationHotFilePath = System.IO.Path.Combine(hotFolderPathString, System.IO.Path.GetFileName(finalOutputPath));
-                            // Genereer een unieke naam in de hot folder om overschrijven te voorkomen,
-                            // of overschrijf als dat de bedoeling is.
-                            int attempt = 0;
-                            string tempDestPath = destinationHotFilePath;
-                            while (File.Exists(tempDestPath))
+                            sourceImages.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[i]));
+                            App.Logger?.Debug("ImageProcessing: Photo {IndexPlusOne} '{PhotoName}' loaded.", i + 1, System.IO.Path.GetFileName(individualPhotoPaths[i]));
+                        }
+
+                        // ----- BEGIN SPECIFIEKE LOGICA VOOR FOTO PLAATSING OP CANVAS -----
+                        // Template is 1200x3600. Laten we marges en fotoafmetingen bepalen.
+
+                        int templateWidth = photoCanvasImage.Width; // Gebruik de daadwerkelijke breedte van het canvas/template
+                        int templateHeight = photoCanvasImage.Height; // Gebruik de daadwerkelijke hoogte
+
+                        // Marges binnen de template voor de fotostrook (voorbeeldwaarden)
+                        int horizontalMargin = 50;  // 5% van 1200 is 60. Dus 30px links, 30px rechts. Laten we 60px per kant nemen voor een duidelijker effect, of 5% van 1200 = 60, dus 30 per kant.
+                                                    // Jouw oude code gebruikte 95% van de breedte, dus 2.5% marge per kant.
+                                                    // Laten we dat aanhouden: 0.025 * 1200 = 30px per kant. Totaal 60px.
+                        int photoAreaWidth = templateWidth - (2 * horizontalMargin); // Bv. 1200 - 60 = 1140
+
+                        // Verticale verdeling. Stel totale hoogte voor foto's is 90% van template hoogte
+                        int totalPhotoAreaHeight = (int)(templateHeight * 0.80); // bv. 0.90 * 3600 = 3240
+                        int moveUp = 40;
+                        int topBottomMargin = ((templateHeight - totalPhotoAreaHeight) / 2) - moveUp; // bv. (3600 - 3240) / 2 = 180
+
+                        // Hoogte beschikbaar per foto (exclusief spacing tussen foto's)
+                        // Stel we willen spacing tussen de foto's.
+                        int spacingBetweenPhotos = 15; // Voorbeeldwaarde
+                        int availableHeightPerPhotoSlot = (totalPhotoAreaHeight - ((TOTAL_PHOTOS_TO_TAKE - 1) * spacingBetweenPhotos)) / TOTAL_PHOTOS_TO_TAKE;
+                        // bv. (3240 - (2 * 40)) / 3 = (3240 - 80) / 3 = 3160 / 3 = 1053 (afgerond)
+
+                        App.Logger?.Debug("ImageProcessing: Photo Area Width: {PhotoAreaWidth}, Available Height Per Slot: {SlotHeight}", photoAreaWidth, availableHeightPerPhotoSlot);
+
+                        int currentY = topBottomMargin;
+
+                        for (int i = 0; i < sourceImages.Count; i++)
+                        {
+                            var currentPhoto = sourceImages[i];
+
+                            // Doelafmetingen voor deze foto binnen zijn slot
+                            // We schalen de foto om in photoAreaWidth te passen, met behoud van aspect ratio.
+                            // Dan controleren we of de geschaalde hoogte past in availableHeightPerPhotoSlot.
+                            // Indien nodig, croppen we de foto (meestal de hoogte) om te passen.
+
+                            float sourceAspectRatio = (float)currentPhoto.Width / currentPhoto.Height;
+
+                            // 1. Schaal naar de doelbreedte (photoAreaWidth)
+                            int resizedHeight = (int)Math.Round(photoAreaWidth / sourceAspectRatio);
+                            int resizedWidth = photoAreaWidth;
+
+                            var tempImage = currentPhoto.Clone(); // Werk op een kloon voor tussenstappen
+                            tempImage.Mutate(x => x.Resize(resizedWidth, resizedHeight, KnownResamplers.Lanczos3));
+                            App.Logger?.Debug($"ImageProcessing: Photo {i + 1} initially resized to {resizedWidth}x{resizedHeight}.");
+
+                            // 2. Controleer of de geschaalde hoogte past. Indien te hoog, crop vanuit het midden.
+                            if (tempImage.Height > availableHeightPerPhotoSlot)
                             {
-                                attempt++;
-                                tempDestPath = System.IO.Path.Combine(hotFolderPathString, $"{System.IO.Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{System.IO.Path.GetExtension(finalOutputPath)}");
+                                int cropAmountY = tempImage.Height - availableHeightPerPhotoSlot;
+                                int cropY = cropAmountY / 2;
+                                tempImage.Mutate(x => x.Crop(new Rectangle(0, cropY, tempImage.Width, availableHeightPerPhotoSlot)));
+                                App.Logger?.Debug($"ImageProcessing: Photo {i + 1} cropped vertically to fit slot. Cropped by {cropAmountY}px from Y={cropY}. New height: {tempImage.Height}.");
                             }
-                            destinationHotFilePath = tempDestPath;
+                            // Als de foto na resizen juist *minder* hoog is dan availableHeightPerPhotoSlot,
+                            // zou je kunnen overwegen om te centreren in de slot, of de slot kleiner te maken.
+                            // Voor nu gaan we uit van croppen als het te groot is.
+                            // Het is ook mogelijk dat je juist wilt schalen zodat de *hoogte* past, en dan de breedte cropt.
+                            // Dit hangt af van de typische aspect ratio van je bronfoto's en de "vensters" in je template.
 
-                            File.Copy(finalOutputPath, destinationHotFilePath);
-                            App.Logger?.Information("ImageProcessing: Merged photo strip copied to hot folder: {CopiedPath}", destinationHotFilePath);
+                            // De uiteindelijke afmetingen van de foto die op het canvas komt
+                            int finalPhotoWidth = tempImage.Width;
+                            int finalPhotoHeight = tempImage.Height;
+
+                            // Bereken X positie om te centreren binnen de template breedte
+                            int targetX = (templateWidth - finalPhotoWidth) / 2;
+                            int targetY = currentY;
+
+                            // Als de foto na schalen/croppen een andere hoogte heeft dan availableHeightPerPhotoSlot
+                            // (bijv. omdat hij al kleiner was), centreer hem dan in de toegewezen verticale ruimte voor dit slot.
+                            if (finalPhotoHeight < availableHeightPerPhotoSlot)
+                            {
+                                targetY += (availableHeightPerPhotoSlot - finalPhotoHeight) / 2;
+                            }
+
+                            // Teken de bewerkte foto op het 'photoCanvasImage'
+                            photoCanvasImage.Mutate(x => x.DrawImage(tempImage, new SixLabors.ImageSharp.Point(targetX, targetY), 1f));
+                            App.Logger?.Debug($"ImageProcessing: Photo {i + 1} drawn onto photo canvas at ({targetX},{targetY}) with final size {finalPhotoWidth}x{finalPhotoHeight}.");
+
+                            tempImage.Dispose(); // Ruim de kloon op
+
+                            currentY += availableHeightPerPhotoSlot + spacingBetweenPhotos; // Update Y voor volgende foto slot
                         }
-                        else
-                        {
-                            App.Logger?.Warning("ImageProcessing: Hot folder path does not exist, cannot copy: {HotFolderPath}", hotFolderPathString);
-                        }
+                        // ----- EINDE SPECIFIEKE LOGICA VOOR FOTO PLAATSING -----
                     }
-                    catch (Exception ex) // Vangt bredere exceptions op voor IO
+                    finally
                     {
-                        App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
+                        foreach (var img in sourceImages) { img?.Dispose(); }
                     }
-                }
 
-                return finalOutputPath; // Geef het pad naar de opgeslagen strip terug
+                    // 4. Teken de PNG-template (met transparantie) OVER het photoCanvasImage
+                    var graphicsOptions = new GraphicsOptions() { AlphaCompositionMode = PixelAlphaCompositionMode.SrcOver };
+                    photoCanvasImage.Mutate(ctx => ctx.DrawImage(overlayTemplateImage, new Point(0, 0), graphicsOptions));
+                    App.Logger?.Information("ImageProcessing: PNG Overlay Template applied over photo canvas.");
+
+                    // 5. Sla het uiteindelijke resultaat op
+                    string outputFileName = $"{filenamePrepend}_PhotoStrip_Overlay.jpg";
+                    string finalOutputPath = System.IO.Path.Combine(outputBaseFolderPath, outputFileName);
+
+                    var jpegEncoder = new JpegEncoder { Quality = 90 }; // Of haal uit App.CurrentSettings
+                    await photoCanvasImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder);
+                    App.Logger?.Information("ImageProcessing: Final composite photo strip saved to: {OutputPath}", finalOutputPath);
+
+                    // Kopiëren naar Hot Folder
+                    if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    {
+                        // ... (hot folder kopieer logica zoals voorheen) ...
+                        string hotFolderPathString = App.CurrentSettings.HotFolderPath;
+                        try
+                        {
+                            if (Directory.Exists(hotFolderPathString))
+                            {
+                                string destinationHotFilePath = System.IO.Path.Combine(hotFolderPathString, System.IO.Path.GetFileName(finalOutputPath));
+                                int attempt = 0;
+                                string tempDestPath = destinationHotFilePath;
+                                while (File.Exists(tempDestPath))
+                                {
+                                    attempt++;
+                                    tempDestPath = System.IO.Path.Combine(hotFolderPathString, $"{System.IO.Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{System.IO.Path.GetExtension(finalOutputPath)}");
+                                }
+                                destinationHotFilePath = tempDestPath;
+
+                                File.Copy(finalOutputPath, destinationHotFilePath);
+                                App.Logger?.Information("ImageProcessing: Merged photo strip copied to hot folder: {CopiedPath}", destinationHotFilePath);
+                            }
+                            else
+                            {
+                                App.Logger?.Warning("ImageProcessing: Hot folder path does not exist, cannot copy: {HotFolderPath}", hotFolderPathString);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
+                        }
+                    }
+                    return finalOutputPath;
+                }
             }
+
             catch (Exception ex)
             {
-                App.Logger?.Error(ex, "ImageProcessing: A critical error occurred during the image merging process.");
+                App.Logger?.Error(ex, "ImageProcessing: A critical error occurred during the image merging process with overlay.");
                 return null;
             }
-            // Dispose van templateImage gebeurt door de 'using' statement aan het begin van de try-block.
-
         }
     }
 }
