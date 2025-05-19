@@ -13,12 +13,9 @@ using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Threading.Tasks;
-using Windows.Storage;
 using WinUI3App1;
-using Path = System.IO.Path;
 using System.Linq;
 
 namespace WinUI3App
@@ -28,7 +25,11 @@ namespace WinUI3App
         private int _photosTaken = 0;
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>(); // contains the paths of the taken individual photos
-        private const string PLACEHOLDER_IMAGE_PATH = "ms-appx:///Assets/placeholder.jpg";
+
+        private static readonly string PlaceholderImageFileName = "placeholder.jpg";
+        private static readonly string AssetsFolderName = "Assets";
+        private static readonly string PLACEHOLDER_IMAGE_PATH = System.IO.Path.Combine(AppContext.BaseDirectory, AssetsFolderName, PlaceholderImageFileName);
+
 
         // Color of the dots
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
@@ -42,6 +43,14 @@ namespace WinUI3App
         {
             this.InitializeComponent();
             this.Loaded += PhotoBoothPage_Loaded;
+
+            // Log placeholder image path and check if it exists
+            App.Logger?.Debug("PhotoBoothPage: PLACEHOLDER_IMAGE_PATH resolved to: {PlaceholderPath}", PLACEHOLDER_IMAGE_PATH);
+            if (!File.Exists(PLACEHOLDER_IMAGE_PATH))
+            {
+                App.Logger?.Error("PhotoBoothPage: CRITICAL - Placeholder image not found at resolved path: {PlaceholderPath}", PLACEHOLDER_IMAGE_PATH);
+                // Overweeg hier een fallback of duidelijke foutmelding als de placeholder essentieel is.
+            }
 
             // Initialize the timer but don't start it yet
             _reviewPageTimeoutTimer = new DispatcherTimer();
@@ -356,7 +365,7 @@ namespace WinUI3App
             _photoPaths.Add(PLACEHOLDER_IMAGE_PATH);
             // Increment the counter for photos taken
             _photosTaken++;
-            App.Logger.Information("TakePhotoSimulation: Placeholder photo recorded. Total photos taken: {PhotosTakenCount}.", _photosTaken);
+            App.Logger.Debug("TakePhotoSimulation: Placeholder photo recorded. Total photos taken: {PhotosTakenCount}.", _photosTaken);
 
             // Update the progress indicator dots to reflect the photo just taken as completed.
             // The 'false' for isCapturingNext indicates we are done with this capture, not starting the next countdown yet.
@@ -447,7 +456,7 @@ namespace WinUI3App
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
 
             bool useHorizontalLayout = App.CurrentSettings?.HorizontalReviewLayout ?? true; // Default naar horizontaal als setting niet bestaat
-            App.Logger?.Information("PhotoBoothPage: Review layout will be {Layout}. HorizontalReviewLayout setting is {SettingValue}",
+            App.Logger?.Debug("PhotoBoothPage: Review layout will be {Layout}. HorizontalReviewLayout setting is {SettingValue}",
                 useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.HorizontalReviewLayout);
 
             // Bepaal welke galerij en welke image controls te gebruiken
@@ -763,7 +772,7 @@ namespace WinUI3App
 
             // Output folder: Gebruik Environment.GetFolderPath voor bekende mappen
             string picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-            string outputBaseFolderPath = Path.Combine(picturesPath, "PhotoBoothAppOutput");
+            string outputBaseFolderPath = System.IO.Path.Combine(picturesPath, "PhotoBoothAppOutput");
 
             // Zorg ervoor dat de output map bestaat
             try
@@ -782,7 +791,7 @@ namespace WinUI3App
             {
                 // Laad de template afbeelding
                 using SixLabors.ImageSharp.Image<Rgba32> templateImage = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(templateImagePath);
-                App.Logger?.Debug("ImageProcessing: Template image '{TemplateName}' loaded ({Width}x{Height}).", Path.GetFileName(templateImagePath), templateImage.Width, templateImage.Height);
+                App.Logger?.Debug("ImageProcessing: Template image '{TemplateName}' loaded ({Width}x{Height}).", System.IO.Path.GetFileName(templateImagePath), templateImage.Width, templateImage.Height);
 
                 // Laad de drie genomen foto's
                 // We maken een lijst van de Image objecten zodat we ze kunnen disposen in een finally block of na gebruik
@@ -790,11 +799,11 @@ namespace WinUI3App
                 try
                 {
                     sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[0]));
-                    App.Logger?.Debug("ImageProcessing: Photo 1 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[0]));
+                    App.Logger?.Debug("ImageProcessing: Photo 1 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[0]));
                     sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[1]));
-                    App.Logger?.Debug("ImageProcessing: Photo 2 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[1]));
+                    App.Logger?.Debug("ImageProcessing: Photo 2 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[1]));
                     sourceImagesToProcess.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[2]));
-                    App.Logger?.Debug("ImageProcessing: Photo 3 '{PhotoName}' loaded.", Path.GetFileName(individualPhotoPaths[2]));
+                    App.Logger?.Debug("ImageProcessing: Photo 3 '{PhotoName}' loaded.", System.IO.Path.GetFileName(individualPhotoPaths[2]));
 
                     // ----- BEGIN VAN JOUW SPECIFIEKE MERGE LOGICA -----
                     // Dit deel moet je overnemen en aanpassen uit je oude PhotoMain.xaml.cs
@@ -839,7 +848,7 @@ namespace WinUI3App
 
                 // Opslaan van de samengevoegde afbeelding
                 string outputFileName = $"{filenamePrepend}_PhotoStrip.jpg";
-                string finalOutputPath = Path.Combine(outputBaseFolderPath, outputFileName);
+                string finalOutputPath = System.IO.Path.Combine(outputBaseFolderPath, outputFileName);
 
                 var jpegEncoder = new JpegEncoder { Quality = 90 }; // Waarde tussen 1 en 100
                 await templateImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder); // Sla direct op naar pad
@@ -854,7 +863,7 @@ namespace WinUI3App
                     {
                         if (Directory.Exists(hotFolderPathString)) // Controleer of de doelmap bestaat
                         {
-                            string destinationHotFilePath = Path.Combine(hotFolderPathString, Path.GetFileName(finalOutputPath));
+                            string destinationHotFilePath = System.IO.Path.Combine(hotFolderPathString, System.IO.Path.GetFileName(finalOutputPath));
                             // Genereer een unieke naam in de hot folder om overschrijven te voorkomen,
                             // of overschrijf als dat de bedoeling is.
                             int attempt = 0;
@@ -862,7 +871,7 @@ namespace WinUI3App
                             while (File.Exists(tempDestPath))
                             {
                                 attempt++;
-                                tempDestPath = Path.Combine(hotFolderPathString, $"{Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{Path.GetExtension(finalOutputPath)}");
+                                tempDestPath = System.IO.Path.Combine(hotFolderPathString, $"{System.IO.Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{System.IO.Path.GetExtension(finalOutputPath)}");
                             }
                             destinationHotFilePath = tempDestPath;
 

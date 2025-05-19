@@ -28,7 +28,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
             try
             {
                 // Attempt to get the LocalFolder path for storing settings  
-                FilePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, SETTINGS_FILENAME);
+                FilePath = System.IO.Path.Combine(ApplicationData.Current.LocalFolder.Path, SETTINGS_FILENAME);
                 App.Logger?.Debug($"SettingsManager: LocalFolder path resolved to {FilePath}");
             }
             catch (Exception ex)
@@ -36,7 +36,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
                 // Log fallback to BaseDirectory in case of an error  
                 App.Logger?.Debug($"Error getting LocalFolder path for settings: {ex.Message}. Falling back to BaseDirectory.");
                 // Fallback for unpackaged apps or if LocalFolder is problematic:
-                FilePath = Path.Combine(AppContext.BaseDirectory, SETTINGS_FILENAME);
+                FilePath = System.IO.Path.Combine(AppContext.BaseDirectory, SETTINGS_FILENAME);
                 App.Logger?.Debug($"SettingsManager: Fallback path resolved to {FilePath}");
             }
         }
@@ -116,7 +116,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
 
             try
             {
-                string directory = Path.GetDirectoryName(FilePath);
+                string directory = System.IO.Path.GetDirectoryName(FilePath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 {
                     Directory.CreateDirectory(directory);

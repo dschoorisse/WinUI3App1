@@ -385,7 +385,7 @@ namespace WinUI3App1
                 localAppDataPath = AppContext.BaseDirectory;
             }
 
-            string logsDirectory = Path.Combine(localAppDataPath, "Logs"); // New base path
+            string logsDirectory = System.IO.Path.Combine(localAppDataPath, "Logs"); // New base path
 
             if (!Directory.Exists(logsDirectory)) Directory.CreateDirectory(logsDirectory);
 
@@ -400,7 +400,7 @@ namespace WinUI3App1
             {
                 loggerConfiguration.WriteTo.File(
                     formatter: new RenderedCompactJsonFormatter(), // Use the compact JSON formatter
-                    path: Path.Combine(logsDirectory, "photobooth-log-.ndjson"), // Suggest .ndjson or .json.log extension
+                    path: System.IO.Path.Combine(logsDirectory, "photobooth-log-.ndjson"), // Suggest .ndjson or .json.log extension
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 7);
             }
@@ -832,7 +832,7 @@ namespace WinUI3App1
                 {
                     string oldStateForLog = _state.ToString();
                     _state = value;
-                    Logger?.Information("App: State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
+                    Logger?.Debug("App: State changed from {OldState} to: {NewOperationalState}", oldStateForLog, _state.ToString());
 
                     // Automatically publish the full status when this state changes
                     _ = PublishPhotoBoothStatusJsonAsync();

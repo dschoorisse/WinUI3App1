@@ -463,7 +463,7 @@ namespace WinUI3App1
                     localAppDataPath = AppContext.BaseDirectory;
                 }
 
-                string logsDirectory = Path.Combine(localAppDataPath, "Logs"); // New base path
+                string logsDirectory = System.IO.Path.Combine(localAppDataPath, "Logs"); // New base path
 
                 if (!Directory.Exists(logsDirectory)) { Directory.CreateDirectory(logsDirectory); }
                 // App.Logger?.Information("Opening logs directory: {LogsDirectory}", logsDirectory);

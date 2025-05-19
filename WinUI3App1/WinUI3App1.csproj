@@ -101,6 +101,11 @@
     <PRIResource Remove="EDSDK\**" />
   </ItemGroup>
   <ItemGroup>
+    <Content Update="Assets\placeholder.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <None Update="photobooth_settings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
