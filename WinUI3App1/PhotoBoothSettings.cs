@@ -51,6 +51,8 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string BackgroundImagePath { get; set; } = ""; // Example: "Assets/default_background.jpg" or leave empty
         public bool HorizontalReviewLayout { get; set; } = true; // NIEUW: Standaard horizontaal
         public string PhotoStripFilePath { get; set; } = ""; // NIEUW: Vervangt PhotoStripTemplatePath en PhotoStripLayoutIndex
+        public PhotoStripImageCompositionSettings PhotoStripComposition { get; set; } = new PhotoStripImageCompositionSettings();
+
 
         // Functionality (from SettingsPage)
         public bool EnablePhotos { get; set; } = true;
@@ -93,6 +95,25 @@ namespace WinUI3App1 // Ensure this namespace matches your project
             DmxLightMqttTopic = $"light/dmx";
         }
     }
+
+    public class PhotoStripImageCompositionSettings
+    {
+        // Marges binnen de template (in pixels)
+        public int TemplateHorizontalPaddingPerSide { get; set; } = 85; // Marge links en rechts op de template
+        public int TemplateDesiredTopMargin { get; set; } = 80;       // Marge boven de eerste foto
+        public int TemplateDesiredBottomMargin { get; set; } = 500;    // Marge onder de laatste foto
+
+        // Spacing tussen de foto's (in pixels)
+        public int SpacingBetweenPhotos { get; set; } = 25;
+
+        // Doel aspect ratio voor de 'vensters' waar de foto's in komen.
+        // Bijvoorbeeld: 1.7777 (16:9), 1.5 (3:2), 1.3333 (4:3).
+        // Of laat dit weg en bereken de hoogte van het slot puur op basis van beschikbare ruimte.
+        // Voor nu laten we dit weg en gebruiken we de berekening zoals in je laatste code.
+        // Je zou hier later een target aspect ratio of vaste hoogte kunnen toevoegen.
+        // public double TargetPhotoSlotAspectRatio { get; set; } = 16.0 / 9.0; // Voorbeeld
+    }
+
 
     // Helper extension for cleaning strings (optional, place in a utility class if you have one)
     public static class StringExtensions

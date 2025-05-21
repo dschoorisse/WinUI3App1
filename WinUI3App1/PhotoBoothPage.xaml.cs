@@ -590,6 +590,8 @@ namespace WinUI3App
             }
             else
             {
+                // TODO: a severe error has occured
+                // show a popup to the user
                 App.Logger?.Error("PhotoBoothPage: Cannot start merge process. Conditions not met (Settings, TemplatePath, or PhotoPaths invalid/incomplete).");
                 if (App.CurrentSettings == null) App.Logger?.Error(" - App.CurrentSettings is null.");
                 if (App.CurrentSettings != null && string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath)) App.Logger?.Error(" - PhotoStripFilePath is empty.");
@@ -773,6 +775,20 @@ namespace WinUI3App
             }
             #endregion
 
+            #region Retrieve composition settings
+            // Haal de compositie-instellingen op
+            var compositionSettings = App.CurrentSettings?.PhotoStripComposition;
+            if (compositionSettings == null)
+            {
+                App.Logger?.Error("ImageProcessing: PhotoStripComposition settings are missing. Aborting.");
+                // Optioneel: Gebruik hier hardcoded defaults als fallback of return null
+                // Voor nu gaan we ervan uit dat ze altijd geladen zijn (met defaults uit de constructor)
+                // Als je een expliciete fallback wilt:
+                // compositionSettings = new PhotoStripImageCompositionSettings(); 
+                return null; // Of gooi een exception
+            }
+            #endregion
+
             string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             string outputBaseFolderPath = System.IO.Path.Combine(picturesPath, "PhotoBoothAppOutput");
@@ -808,33 +824,22 @@ namespace WinUI3App
                             App.Logger?.Debug("ImageProcessing: Photo {IndexPlusOne} '{PhotoName}' loaded.", i + 1, Path.GetFileName(individualPhotoPaths[i]));
                         }
 
-                        // Binnen ProcessAndMergePhotosAsync in PhotoBoothPage.xaml.cs
+                        int templateWidth = photoCanvasImage.Width;
+                        int templateHeight = photoCanvasImage.Height;
 
-                        // Binnen ProcessAndMergePhotosAsync in PhotoBoothPage.xaml.cs
+                        // Gebruik waarden uit de settings
+                        int horizontalPaddingPerSide = compositionSettings.TemplateHorizontalPaddingPerSide;
+                        int photoAreaWidth = templateWidth - (2 * horizontalPaddingPerSide);
 
-                        // ----- BEGIN AANGEPASTE LOGICA VOOR FOTO PLAATSING OP CANVAS -----
-
-                        int templateWidth = photoCanvasImage.Width;     // Bv. 1200
-                        int templateHeight = photoCanvasImage.Height;   // Bv. 3600
-
-                        // **1. Bepaal de breedte van de foto's op de strip**
-                        int horizontalPaddingPerSide = 85; // Marge links en rechts (experimenteer)
-                        int photoAreaWidth = templateWidth - (2 * horizontalPaddingPerSide); // Bv. 1200 - 100 = 1100px
-
-                        // **2. Bepaal de start Y-positie en de totale verticale ruimte voor foto's + spacing**
-                        int desiredTopMargin = 80; // Hoeveel ruimte boven de eerste foto (experimenteer)
-                        int desiredBottomMargin = 500; // Hoeveel ruimte onder de laatste foto (experimenteer)
-                        int spacingBetweenPhotos = 25;  // Ruimte tussen foto's (experimenteer)
+                        int desiredTopMargin = compositionSettings.TemplateDesiredTopMargin;
+                        int desiredBottomMargin = compositionSettings.TemplateDesiredBottomMargin;
+                        int spacingBetweenPhotos = compositionSettings.SpacingBetweenPhotos;
 
                         int totalVerticalSpaceForPhotosAndSpacing = templateHeight - desiredTopMargin - desiredBottomMargin;
-                        // Bv. 3600 - 150 - 150 = 3300px
-
-                        // **3. Bereken de hoogte van elk "fotovenster"**
-                        // Dit is de hoogte die elke foto zal innemen op de uiteindelijke strip.
                         int photoSlotHeight = (totalVerticalSpaceForPhotosAndSpacing - ((TOTAL_PHOTOS_TO_TAKE - 1) * spacingBetweenPhotos)) / TOTAL_PHOTOS_TO_TAKE;
-                        // Bv. (3300 - (2 * 40)) / 3 = (3300 - 80) / 3 = 3220 / 3 = ~1073px
 
-                        App.Logger?.Debug("ImageProcessing: Target Photo Area Width: {PhotoAreaWidth}, Target Photo Slot Height: {SlotHeight}", photoAreaWidth, photoSlotHeight);
+                        App.Logger?.Debug($"ImageProcessing: Horizontal Padding Per Side: {horizontalPaddingPerSide}, Total vertical space for photos and spacing: {totalVerticalSpaceForPhotosAndSpacing}, Desired Top Margin: {desiredTopMargin}, Desired Bottom Margin: {desiredBottomMargin}, " +
+                            $"Spacing Between Photos: {spacingBetweenPhotos}, Target Photo Area Width: {photoAreaWidth}, Target Photo Slot Height: {photoSlotHeight}");
 
                         int currentY = desiredTopMargin; // Start Y-positie voor de eerste foto
 
@@ -843,10 +848,9 @@ namespace WinUI3App
                             var currentPhoto = sourceImages[i];
                             var tempImage = currentPhoto.Clone();
 
-                            // **4. Resize en Crop de bronfoto om het "fotovenster" (photoAreaWidth x photoSlotHeight) te vullen**
-                            // We willen de foto zo schalen dat deze het slot vult, en dan het teveel afsnijden (croppen).
-                            // De aspect ratio van het slot is photoAreaWidth / photoSlotHeight.
-
+                            // Resize and crop the source photo to fill the "photo window" (photoAreaWidth x photoSlotHeight)**
+                            // We want to scale the photo so that it fills the slot, and then crop any excess.
+                            // The aspect ratio of the slot is photoAreaWidth / photoSlotHeight.
                             float targetSlotAspectRatio = (float)photoAreaWidth / photoSlotHeight;
                             float sourceAspectRatio = (float)tempImage.Width / tempImage.Height;
 
@@ -855,8 +859,8 @@ namespace WinUI3App
 
                             if (sourceAspectRatio > targetSlotAspectRatio)
                             {
-                                // Bronfoto is breder (meer landschap) dan het doel-slot.
-                                // We schalen zodat de hoogte past, en de breedte zal dan overschot hebben om te croppen.
+                                // Source photo is wider (more landscape) than the target slot.
+                                // We scale so the height fits, and the width will then have excess to crop.
                                 App.Logger?.Debug($"Source photo is wider than target slot, scaling so it fits in height. Width will be cropped.");
 
                                 resizeHeight = photoSlotHeight;
@@ -865,8 +869,8 @@ namespace WinUI3App
                             }
                             else
                             {
-                                // Bronfoto is smaller/hoger (meer portret) dan of gelijk aan het doel-slot.
-                                // We schalen zodat de breedte past, en de hoogte zal dan overschot hebben om te croppen.
+                                // Source photo is narrower/taller (more portrait) than or equal to the target slot.
+                                // We scale so the width fits, and the height will then have excess to crop.
                                 App.Logger?.Debug($"Source photo is taller than target slot, scaling so it fits in width. Height will be cropped.");
 
                                 resizeWidth = photoAreaWidth;
@@ -874,8 +878,8 @@ namespace WinUI3App
                                 resizeMode = ResizeMode.Crop; // Zal schalen op breedte en dan hoogte croppen
                             }
 
-                            // Gebruik ResizeMode.Crop. ImageSharp schaalt eerst zodat de afbeelding het doelgebied bedekt
-                            // en snijdt dan het overschot af vanuit het midden.
+                            // Use ResizeMode.Crop. ImageSharp first scales the image so that it covers the target area,
+                            // then crops the excess from the center.
                             var resizeOptions = new ResizeOptions
                             {
                                 Size = new Size(photoAreaWidth, photoSlotHeight), // De uiteindelijke afmetingen van de foto in het slot
