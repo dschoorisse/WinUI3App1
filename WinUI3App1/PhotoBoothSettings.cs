@@ -88,9 +88,9 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         {
             // Zorg ervoor dat default topics uniek zijn per machine indien nodig
             string machineNameIdentifier = Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty);
-            LightPrinterMqttTopic = $"photobooth/{machineNameIdentifier}/light/printer";
-            InternalLightMqttTopic = $"photobooth/{machineNameIdentifier}/light/internal";
-            DmxLightMqttTopic = $"photobooth/{machineNameIdentifier}/light/dmx";
+            LightPrinterMqttTopic = $"light/printer";
+            InternalLightMqttTopic = $"light/internal";
+            DmxLightMqttTopic = $"light/dmx";
         }
     }
 
