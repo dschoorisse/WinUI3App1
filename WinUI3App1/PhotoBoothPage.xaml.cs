@@ -169,7 +169,7 @@ namespace WinUI3App
             Ellipse[] dots = { ProgressDot1, ProgressDot2, ProgressDot3 };
             for (int i = 0; i < dots.Length; i++)
             {
-                App.Logger.Debug($"Dot {i + 1} state: {(i < photosSuccessfullyCompleted ? "Completed" : (i == photosSuccessfullyCompleted && isCapturingNext ? "Active" : "Pending"))}");
+                App.Logger.Verbose($"Dot {i + 1} state: {(i < photosSuccessfullyCompleted ? "Completed" : (i == photosSuccessfullyCompleted && isCapturingNext ? "Active" : "Pending"))}");
                 if (i < photosSuccessfullyCompleted) { dots[i].Fill = _dotCompletedBrush; }
                 else if (i == photosSuccessfullyCompleted && isCapturingNext && photosSuccessfullyCompleted < TOTAL_PHOTOS_TO_TAKE) { dots[i].Fill = _dotActiveBrush; }
                 else { dots[i].Fill = _dotPendingBrush; }
@@ -397,7 +397,7 @@ namespace WinUI3App
             App.Logger.Debug("TakePhotoSimulation: TakenPhotoImage initial transform and opacity reset for animation.");
 
             // --- Animation to show the taken photo (Zoom in and Fade in) ---
-            App.Logger.Debug("TakePhotoSimulation: Starting 'show photo' animation for TakenPhotoImage.");
+            App.Logger.Verbose("TakePhotoSimulation: Starting 'show photo' animation for TakenPhotoImage.");
             var scaleXAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
             var scaleYAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
             var fadeInAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(400) };
@@ -413,12 +413,12 @@ namespace WinUI3App
             showPhotoSb.Begin();
 
             // Wait for the photo to be displayed on screen for a set duration
-            App.Logger.Debug("TakePhotoSimulation: Photo preview animation started. Waiting for display duration (2500ms).");
+            App.Logger.Verbose("TakePhotoSimulation: Photo preview animation started. Waiting for display duration (2500ms).");
             await Task.Delay(2500);
-            App.Logger.Debug("TakePhotoSimulation: Photo display duration complete.");
+            App.Logger.Verbose("TakePhotoSimulation: Photo display duration complete.");
 
             // --- Animation to hide the taken photo (Fade out and optionally Zoom out) ---
-            App.Logger.Debug("TakePhotoSimulation: Starting 'hide photo' animation for TakenPhotoImage.");
+            App.Logger.Verbose("TakePhotoSimulation: Starting 'hide photo' animation for TakenPhotoImage.");
             var scaleXResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
             var scaleYResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
             var fadeOutAnimPhoto = new DoubleAnimation { To = 0.0, Duration = TimeSpan.FromMilliseconds(300) };
@@ -431,7 +431,7 @@ namespace WinUI3App
             // This prepares the ScaleTransform for the next photo's "zoom-in" or resets it if going to gallery.
             if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
             {
-                App.Logger.Debug("TakePhotoSimulation: More photos to take, adding scale reset to hide animation.");
+                App.Logger.Verbose("TakePhotoSimulation: More photos to take, adding scale reset to hide animation.");
                 Storyboard.SetTarget(scaleXResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXResetAnim, "ScaleX");
                 Storyboard.SetTarget(scaleYResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYResetAnim, "ScaleY");
                 hidePhotoSb.Children.Add(scaleXResetAnim);
@@ -441,12 +441,12 @@ namespace WinUI3App
 
             // Wait for the hide animation to complete
             await Task.Delay(300);
-            App.Logger.Debug("TakePhotoSimulation: 'Hide photo' animation complete.");
+            App.Logger.Verbose("TakePhotoSimulation: 'Hide photo' animation complete.");
 
             // Proceed to the next step in the photo capture sequence (either another countdown or the review screen)
             App.Logger.Debug("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
             await StartNextPhotoCapture();
-            App.Logger.Debug("TakePhotoSimulation: Method finished.");
+            App.Logger.Debug("TakePhotoSimulation: StartNextPhotoCapture method finished.");
         }
 
         private async Task ShowAllPhotosForReview()
@@ -536,7 +536,7 @@ namespace WinUI3App
             App.Logger?.Debug("PhotoBoothPage: Accept button clicked, review timeout timer stopped.");
 
             // Handle the accept button click event
-            App.Logger.Information("Accept button clicked. Current state: {App.State}");
+            App.Logger.Information($"Accept button clicked. Current state: {App.State}");
 
             if (App.State != App.PhotoBoothState.ReviewingPhotos)
             {
@@ -552,6 +552,8 @@ namespace WinUI3App
 
             #region Fade-in of overlay
             // --- Start of Fade-in Logic for OverlayGrid ---
+            App.Logger?.Verbose($"PhotoBoothPage: Started fade-in logic for overlayGrid");
+
             OverlayGrid.Opacity = 0; // Start fully transparent
             OverlayGrid.Visibility = Visibility.Visible; // Make it visible but transparent
             OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving...";
@@ -569,6 +571,8 @@ namespace WinUI3App
             var storyboard = new Storyboard();
             storyboard.Children.Add(fadeInAnimation);
             storyboard.Begin();
+
+            App.Logger?.Verbose($"PhotoBoothPage: Fade-in logic for overlayGrid completed");
             // --- End of Fade-in Logic for OverlayGrid ---
             #endregion
 
@@ -709,7 +713,7 @@ namespace WinUI3App
 
                 storyboard.Begin();
                 await tcs.Task; // Wait for the fade-out to complete
-                App.Logger?.Debug("PhotoBoothPage: Fade out complete.");
+                App.Logger?.Verbose("PhotoBoothPage: Fade out complete.");
             }
             else
             {

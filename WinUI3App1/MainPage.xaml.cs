@@ -96,7 +96,7 @@ namespace WinUI3App
                 var sb = new Storyboard();
                 sb.Children.Add(fadeInAnimation);
                 sb.Begin();
-                App.Logger?.Debug("MainPage: Content fade-in animation started.");
+                App.Logger?.Verbose("MainPage: Content fade-in animation started.");
             }
             else
             {
