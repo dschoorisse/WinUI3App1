@@ -923,7 +923,7 @@ namespace WinUI3App
 
                     var graphicsOptions = new GraphicsOptions() { AlphaCompositionMode = PixelAlphaCompositionMode.SrcOver };
                     photoCanvasImage.Mutate(ctx => ctx.DrawImage(overlayTemplateImage, new Point(0, 0), graphicsOptions));
-                    App.Logger?.Information("ImageProcessing: PNG Overlay Template applied over photo canvas.");
+                    App.Logger?.Debug("ImageProcessing: PNG Overlay Template applied over photo canvas.");
 
                     string outputFileName = $"{filenamePrepend}_PhotoStrip_Overlay.jpg";
                     string finalOutputPath = Path.Combine(outputBaseFolderPath, outputFileName);
