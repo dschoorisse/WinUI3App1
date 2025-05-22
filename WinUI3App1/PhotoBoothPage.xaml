@@ -7,6 +7,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
+    <Page.Resources>
+    </Page.Resources>
+
     <Grid x:Name="RootGrid">
         <Image x:Name="PageBackgroundImage" Stretch="UniformToFill" VerticalAlignment="Center" HorizontalAlignment="Center"/>
         <Grid x:Name="PageBackgroundOverlay" Background="#4C000000" Visibility="Collapsed"/>
@@ -29,10 +32,7 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0">
-                    <Viewbox x:Name="CaptureElementsViewbox" StretchDirection="Both" 
-                             Stretch="Uniform" 
-                             Margin="0,20,0,10"
-                             Visibility="Visible">
+                    <Viewbox x:Name="CaptureElementsViewbox" StretchDirection="Both" Stretch="Uniform" Margin="0,20,0,10" Visibility="Visible">
                         <Grid Width="640" Height="480">
                             <Image x:Name="CameraPlaceholderImage" Source="ms-appx:///Assets/placeholder.jpg" Stretch="UniformToFill"/>
                             <Border x:Name="CountdownTextBackground" Background="#A0000000" CornerRadius="8" Padding="30,20" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0">
@@ -47,15 +47,11 @@
                     </Viewbox>
 
                     <Viewbox x:Name="HorizontalPhotoGalleryContainer"
-                             Stretch="Uniform"
-                             StretchDirection="Both"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
+                             Stretch="Uniform" StretchDirection="Both"
+                             HorizontalAlignment="Center" VerticalAlignment="Center"
                              Visibility="Collapsed" Opacity="0">
                         <StackPanel x:Name="HorizontalPhotoGallery"
-                                    Orientation="Horizontal"
-                                    Spacing="10"
-                                    Padding="5">
+                                    Orientation="Horizontal" Spacing="10" Padding="5">
                             <Image x:Name="H_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
                             <Image x:Name="H_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
                             <Image x:Name="H_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
@@ -63,37 +59,27 @@
                     </Viewbox>
 
                     <Viewbox x:Name="VerticalPhotoGalleryContainer"
-                             Stretch="Uniform"
-                             StretchDirection="Both"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
+                             Stretch="Uniform" StretchDirection="Both"
+                             HorizontalAlignment="Center" VerticalAlignment="Center"
                              Visibility="Collapsed" Opacity="0">
                         <StackPanel x:Name="VerticalPhotoGallery"
-                                    Orientation="Vertical"
-                                    Spacing="10"
-                                    Padding="5">
+                                    Orientation="Vertical" Spacing="10" Padding="5">
                             <Image x:Name="V_Photo1Image" Width="320" Height="240" Stretch="Uniform" />
                             <Image x:Name="V_Photo2Image" Width="320" Height="240" Stretch="Uniform" />
                             <Image x:Name="V_Photo3Image" Width="320" Height="240" Stretch="Uniform" />
                         </StackPanel>
                     </Viewbox>
-
                 </Grid>
 
                 <StackPanel x:Name="ProgressIndicatorPanel"
-                            Grid.Row="1" 
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Bottom" 
-                            Spacing="8"
-                            Margin="0,10,0,15"
-                            Visibility="Collapsed">
+                            Grid.Row="1" Orientation="Horizontal"
+                            HorizontalAlignment="Center" VerticalAlignment="Bottom" 
+                            Spacing="8" Margin="0,10,0,15" Visibility="Collapsed">
                     <Ellipse x:Name="ProgressDot1" Width="24" Height="24" Fill="Gray"/>
                     <Ellipse x:Name="ProgressDot2" Width="24" Height="24" Fill="Gray"/>
                     <Ellipse x:Name="ProgressDot3" Width="24" Height="24" Fill="Gray"/>
                 </StackPanel>
             </Grid>
-            
 
             <StackPanel x:Name="ActionButtonsPanel" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Spacing="20" Margin="0,40,0,40" Visibility="Collapsed" Opacity="0">
                 <Button x:Name="RetakeButton" Click="RetakeButton_Click" Width="140" Height="160" Background="White" Foreground="Black" CornerRadius="16">
@@ -110,33 +96,47 @@
                 </Button>
             </StackPanel>
 
-            <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#CC000000" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
-                    <TextBlock x:Name="OverlayText" Text="Saving..." FontSize="48" FontWeight="Bold" Foreground="White" TextAlignment="Center"/>
+            <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#E6000000" Visibility="Collapsed">
+                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                    <Border x:Name="QrCodeBorder" Background="White" Padding="20" CornerRadius="8" Visibility="Collapsed">
+                    <TextBlock Grid.Row="0" x:Name="OverlayText" 
+                               Text="Saving..." 
+                               FontSize="48" FontWeight="Bold" 
+                               Foreground="White" 
+                               TextAlignment="Center" HorizontalAlignment="Center" 
+                               Margin="0,0,0,20"/>
+
+                    <Border Grid.Row="1" x:Name="QrCodeBorder" 
+                            Background="White" Padding="20" CornerRadius="8" 
+                            Visibility="Collapsed" 
+                            HorizontalAlignment="Center" 
+                            Margin="0,0,0,20">
                         <Image x:Name="QrCodeImage" Width="400" Height="400" Stretch="Uniform"/>
                     </Border>
-                    <TextBlock x:Name="QrCodeInstructionText" 
-                        Text="Scan the code to view you photo strip!" 
-                        FontSize="24" 
-                        Foreground="White" 
-                        TextWrapping="Wrap" 
-                        TextAlignment="Center"
-                        Visibility="Collapsed"
-                        MaxWidth="400"/>
 
-                    <Button x:Name="CloseQrButton" 
-                        Content="Klaar" 
-                        Click="CloseQrButton_Click" 
-                        Visibility="Collapsed" 
-                        HorizontalAlignment="Center"
-                        Style="{StaticResource AccentButtonStyle}" 
-                        MinWidth="150"
-                        Margin="0,20,0,0"/>
+                    <TextBlock Grid.Row="2" x:Name="QrCodeInstructionText" 
+                               Text="Scan de code om je fotostrip te bekijken!" 
+                               FontSize="24" Foreground="White" TextWrapping="Wrap" 
+                               TextAlignment="Center" HorizontalAlignment="Center" 
+                               Visibility="Collapsed" MaxWidth="400" Margin="0,0,0,20"/>
 
-                    
-                </StackPanel>
+                    <Button Grid.Row="3" x:Name="CloseQrButton"
+                            Click="CloseQrButton_Click"
+                            Width="240" Height="160"
+                            Background="White" Foreground="Black" CornerRadius="16"
+                            HorizontalAlignment="Center" Margin="0,0,0,0">
+                        <StackPanel>
+                            <FontIcon Glyph="&#xE73A;" FontSize="72" HorizontalAlignment="Center"/>
+                            <TextBlock Text="Home" x:Name="CloseQrButtonLabel" FontSize="24" FontWeight="SemiBold" Margin="0,16,0,0" TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>
