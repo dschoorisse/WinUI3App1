@@ -842,7 +842,7 @@ namespace WinUI3App
                         int totalVerticalSpaceForPhotosAndSpacing = templateHeight - desiredTopMargin - desiredBottomMargin;
                         int photoSlotHeight = (totalVerticalSpaceForPhotosAndSpacing - ((TOTAL_PHOTOS_TO_TAKE - 1) * spacingBetweenPhotos)) / TOTAL_PHOTOS_TO_TAKE;
 
-                        App.Logger?.Debug($"ImageProcessing: Horizontal Padding Per Side: {horizontalPaddingPerSide}, Total vertical space for photos and spacing: {totalVerticalSpaceForPhotosAndSpacing}, Desired Top Margin: {desiredTopMargin}, Desired Bottom Margin: {desiredBottomMargin}, " +
+                        App.Logger?.Verbose($"ImageProcessing: Horizontal Padding Per Side: {horizontalPaddingPerSide}, Total vertical space for photos and spacing: {totalVerticalSpaceForPhotosAndSpacing}, Desired Top Margin: {desiredTopMargin}, Desired Bottom Margin: {desiredBottomMargin}, " +
                             $"Spacing Between Photos: {spacingBetweenPhotos}, Target Photo Area Width: {photoAreaWidth}, Target Photo Slot Height: {photoSlotHeight}");
 
                         int currentY = desiredTopMargin; // Start Y-positie voor de eerste foto
