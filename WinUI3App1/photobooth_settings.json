@@ -56,11 +56,11 @@
         "SpacingBetweenPhotos": 25
     },
     "Minio": {
-        "ServiceUrl": "https://minio-pwkc8s80k400wcggckk008g0.116.203.75.25.sslip.io",
+        "ServiceUrl": "https://mys3instance.com",
         "BucketName": "photobooth-media",
-        "AccessKey": "uZmf1PRbtm4iHpQMiXZR",
-        "SecretKey": "lu7CsygGP6hUptC3GxhgrkNX6h5Yr7cViJaBTMOj",
+        "AccessKey": "access",
+        "SecretKey": "secretykey",
         "UseHttp": false,
-        "PublicBaseUrl": "https://minio-pwkc8s80k400wcggckk008g0.116.203.75.25.sslip.io"
+        "PublicBaseUrl": "https://mys3instance.com"
     }
 }
