@@ -612,10 +612,15 @@ namespace WinUI3App
             // --- End of Fade-in Logic for OverlayGrid ---
             #endregion
 
+            // File names and paths
+            string finalPhotoStripPathOnDisk = null; // Om het pad naar de samengevoegde afbeelding op te vangen
+            string uniqueFileId = Guid.NewGuid().ToString("N"); // Genereer GUID zonder streepjes voor een kortere bestandsnaam
+            string publicUrlForQrCode = null;
+
             // Simulate saving process 
             #region Merge and save
             App.Logger?.Information("PhotoBoothPage: Starting photo processing and merging after user accept.");
-            string finalPhotoStripPathOnDisk = null; // Om het pad naar de samengevoegde afbeelding op te vangen
+
 
             // Zorg ervoor dat _photoPaths correct gevuld is met de paden naar de 3 genomen foto's
             // en dat de template pad in settings beschikbaar is.
@@ -654,7 +659,6 @@ namespace WinUI3App
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
 
             #region S3 upload
-            string publicUrlForQrCode = null;
             // If the merge was successful, upload to S3 and get the public URL
             if (App.CurrentSettings.EnableUploading)
             {
@@ -669,7 +673,8 @@ namespace WinUI3App
                     {
                         OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Uploading...";
                         App.State = App.PhotoBoothState.Uploading;
-                        string objectKeyStrip = $"strips/{DateTime.UtcNow:yyyyMMdd}/{Path.GetFileName(finalPhotoStripPathOnDisk)}";
+                        string prefix = $"{DateTime.UtcNow:yyyyMMdd}";
+                        string objectKeyStrip = $"strips/{prefix}/{uniqueFileId}.{Path.GetExtension(finalPhotoStripPathOnDisk)}";
                         App.Logger?.Information("PhotoBoothPage: Attempting to upload photostrip to S3/MinIO with key: {ObjectKey}", objectKeyStrip);
 
                         // TODO: check if this can raise exceptions that needs to be caught
@@ -696,8 +701,8 @@ namespace WinUI3App
                                     string originalPhotoName = Path.GetFileName(_photoPaths[i]);
 
                                     // Generate a key, based on the photo strip prepend and shot nummer
-                                    string stripFilePrepend = Path.GetFileNameWithoutExtension(finalPhotoStripPathOnDisk).Replace("_photoStrip", "");
-                                    string objectKeyOriginal = $"originals/{DateTime.UtcNow:yyyyMMdd}/{stripFilePrepend}_shot{i + 1}{Path.GetExtension(_photoPaths[i])}";
+                                    //string stripFilePrepend = Path.GetFileNameWithoutExtension(finalPhotoStripPathOnDisk).Replace("_photoStrip", "");
+                                    string objectKeyOriginal = $"originals/{prefix}/{uniqueFileId}_shot{i + 1}{Path.GetExtension(_photoPaths[i])}";
 
                                     App.Logger?.Debug($"PhotoBoothPage: Attempting to upload original photo {i + 1} ({originalPhotoName}) to S3/MinIO with key: {objectKeyOriginal}");
                                     string uploadedOriginalUrl = await _s3Service.UploadFileAsync(_photoPaths[i], objectKeyOriginal);
