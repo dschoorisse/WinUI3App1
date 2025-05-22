@@ -63,7 +63,7 @@ namespace WinUI3App
             if ((App.lastPreloadBackgroundUtc == DateTime.MinValue ) || 
                 (App.CurrentSettings.LastModifiedUtc > App.lastPreloadBackgroundUtc))
             {
-                App.Logger?.Information("MainPage: Newer settings detected than loading before. Will reload some settings!");
+                App.Logger?.Information("MainPage: Newer settings detected than loaded before. Will reload some settings!");
 
                 // Load dynamic texts and background image now that elements are ready
                 await App.PreloadBackgroundImageAsync();
@@ -276,7 +276,7 @@ namespace WinUI3App
 
         private void CheckSecretPattern()
         {
-            App.Logger?.Debug("Checking secret pattern");
+            App.Logger?.Debug("MainPage: Checking secret pattern");
 
             // Remove old touches outside the time window
             DateTime cutoffTime = DateTime.Now.AddMilliseconds(-SecretPatternTimeWindow);
@@ -286,7 +286,7 @@ namespace WinUI3App
                 if (_cornerTouches[i].TouchTime < cutoffTime)
                 {
 
-                    App.Logger?.Debug($"Removing previous corner touch of {_cornerTouches[i].CornerName} at {_cornerTouches[i].TouchTime}");
+                    App.Logger?.Debug($"MainPage: Removing previous corner touch of {_cornerTouches[i].CornerName} at {_cornerTouches[i].TouchTime}");
                     _cornerTouches.RemoveAt(i);
                 }
             }
@@ -310,7 +310,7 @@ namespace WinUI3App
 
             if (topLeftTouched && topRightTouched && bottomLeftTouched && bottomRightTouched)
             {
-                App.Logger?.Information("Secret pattern detected! Opening admin panel.");
+                App.Logger?.Warning("MainPage: Secret pattern detected! Opening admin panel.");
 
                 OpenSetttingsPage();
                 _cornerTouches.Clear();
@@ -353,7 +353,7 @@ namespace WinUI3App
 
         private void TakePhotoButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("Photo capture initiated");
+            App.Logger?.Information("MainPage: Photo capture initiated");
 
             // Navigate to photo capture page
             Frame.Navigate(typeof(PhotoBoothPage));
@@ -361,14 +361,14 @@ namespace WinUI3App
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("Video recording initiated");
+            App.Logger?.Information("MainPage: Video recording initiated");
             // Navigate to video recording page
             // Frame.Navigate(typeof(VideoRecordingPage));
         }
 
         private void OpenSetttingsPage()
         {
-            App.Logger?.Information("Opening advanced settings page");
+            App.Logger?.Information("MainPage: Opening advanced settings page");
             Frame.Navigate(typeof(SettingsPage));
         }
 
@@ -378,7 +378,7 @@ namespace WinUI3App
             // Check if the pressed key is 'S' or 's' (VirtualKey.S handles both cases)
             if (e.Key == Windows.System.VirtualKey.S)
             {
-                App.Logger?.Warning("Keyboard 'S' key press detected");
+                App.Logger?.Warning("MainPage: Keyboard 'S' key press detected");
 
                 // Mark the event as handled to prevent further processing
                 e.Handled = true;

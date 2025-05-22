@@ -794,8 +794,11 @@ namespace WinUI3App
             #endregion
 
             string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-            string outputBaseFolderPath = System.IO.Path.Combine(picturesPath, "PhotoBoothAppOutput");
+
+            // Get output folder path from settings or use default
+            string outputBaseFolderPath = App.CurrentSettings?.PhotoOutputPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "PhotoBoothOutput");
+
+            // Create the output folder if it doesn't exist
             Directory.CreateDirectory(outputBaseFolderPath);
 
             App.Logger?.Information("ImageProcessing: Starting merge with overlay. Template: {TemplatePath}. Output base: {OutputDirectory}", templateOverlayPath, outputBaseFolderPath);
@@ -929,6 +932,7 @@ namespace WinUI3App
                     await photoCanvasImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder);
                     App.Logger?.Information("ImageProcessing: Final composite photo strip saved to: {OutputPath}", finalOutputPath);
 
+                    // If printing is enabled and a hot folder path is set, copy the final output to the hot folder
                     if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
                     {
                         string hotFolderPathString = App.CurrentSettings.HotFolderPath;
@@ -947,11 +951,11 @@ namespace WinUI3App
                                 }
                                 destinationHotFilePath = tempDestPath;
                                 File.Copy(finalOutputPath, destinationHotFilePath);
-                                App.Logger?.Information("ImageProcessing: Merged photo strip copied to hot folder: {CopiedPath}", destinationHotFilePath);
+                                App.Logger?.Information($"ImageProcessing: Merged photo strip copied to HotFolder: {destinationHotFilePath}. From there it should be printed by printer utility.");
                             }
                             else
                             {
-                                App.Logger?.Warning("ImageProcessing: Hot folder path does not exist, cannot copy: {HotFolderPath}", hotFolderPathString);
+                                App.Logger?.Warning($"ImageProcessing: Hot folder path does not exist, cannot copy: {hotFolderPathString}");
                             }
                         }
                         catch (Exception ex)
@@ -959,6 +963,15 @@ namespace WinUI3App
                             App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
                         }
                     }
+                    else if (!App.CurrentSettings.EnablePrinting)
+                    {
+                        App.Logger?.Information("ImageProcessing: Printing is disabled, not copying to hot folder.");
+                    }
+                    else if (string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    {
+                        App.Logger?.Warning("ImageProcessing: Copy to HotFolder is enabled, but path is empty. Cannot copy to HotFolder.");
+                    }
+                    
                     return finalOutputPath;
                 }
             }

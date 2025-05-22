@@ -10,7 +10,8 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow; // Last modified date
         public string PhotoboothId { get; set; } = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}"; // Ensure safe ID
 
-        // Properties for remote background image management
+        // Background image
+        public string BackgroundImagePath { get; set; } = ""; // Example: "Assets/default_background.jpg" or leave empty
         public string RemoteBackgroundImageUrl { get; set; } = "";    // URL from where to download the background
         public string RemoteBackgroundImageHash { get; set; } = "";   // Optional: SHA256 hash of the remote image for verification/update checks
         public string LastSuccessfullyDownloadedImageUrl { get; set; } = ""; // To track if current local image matches the remote URL
@@ -22,7 +23,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiMainPagePhotoButtonText { get; set; } = "Take Photo";
         public string UiMainPageVideoButtonText { get; set; } = "Record Video"; // Or "Make a Video", etc.
 
-        // Guest-Facing UI Texts for PhotoBoothPage
+        // PhotoBoothPage
         public string UiInstructionTextFormat { get; set; } = "We are going to take {0} pictures, get ready!"; // {0} will be replaced by number of photos
         public string UiCountdown3 { get; set; } = "3";
         public string UiCountdown2 { get; set; } = "2";
@@ -30,6 +31,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiCountdown0 { get; set; } = "📸"; // Default to existing smiley, can be text like "Smile!"
         public string UiSavingMessage { get; set; } = "Saving...";
         public string UiDoneMessage { get; set; } = "Done!";
+        public bool HorizontalReviewLayout { get; set; } = true; // NIEUW: Standaard horizontaal
 
         // Texts for the Accept/Retake buttons on PhotoBoothPage's review screen
         // Note: Your XAML for these buttons currently has hardcoded text.
@@ -47,19 +49,19 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string HotFolderPath { get; set; } = ""; // NIEUW: Voor DNP Hot Folder
         public string DnpPrinterStatusFilePath { get; set; } // NIEUW
 
-        // UI/Look and Feel (from SettingsPage)
-        public string BackgroundImagePath { get; set; } = ""; // Example: "Assets/default_background.jpg" or leave empty
-        public bool HorizontalReviewLayout { get; set; } = true; // NIEUW: Standaard horizontaal
+        // Output file paths
+        public string PhotoOutputPath { get; set; } = ""; // NIEUW: Voor foto's
+
+        // Photo Strip Settings (from SettingsPage)
         public string PhotoStripFilePath { get; set; } = ""; // NIEUW: Vervangt PhotoStripTemplatePath en PhotoStripLayoutIndex
         public PhotoStripImageCompositionSettings PhotoStripComposition { get; set; } = new PhotoStripImageCompositionSettings();
-
 
         // Functionality (from SettingsPage)
         public bool EnablePhotos { get; set; } = true;
         public bool EnableVideos { get; set; } = false; // Default to false as per current example
         public bool EnablePrinting { get; set; } = true;
 
-        // External Equipment Settings - NIEUWE CATEGORIE
+        // External Equipment Settings
         public string LightPrinterMqttTopic { get; set; } = $"photobooth/{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}/light/printer"; // Voorbeeld topic
         public string InternalLightMqttTopic { get; set; } = $"photobooth/{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}/light/internal";
         public int InternalLedsMinimum { get; set; } = 20;

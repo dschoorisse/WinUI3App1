@@ -188,6 +188,18 @@
                     <ToggleSwitch Header="Foto's Inschakelen" IsOn="{x:Bind EnablePhotos, Mode=TwoWay}" Margin="0,5"/>
                     <ToggleSwitch Header="Video's Inschakelen" IsOn="{x:Bind EnableVideos, Mode=TwoWay}" Margin="0,5"/>
                     <ToggleSwitch Header="Afdrukken via Hot Folder Inschakelen" IsOn="{x:Bind EnablePrinting, Mode=TwoWay}" Margin="0,5"/>
+                    
+                    <Grid Style="{StaticResource SettingItemStyle}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*" MinWidth="250"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Images Output Map:" Style="{StaticResource SettingLabelStyle}"/>
+                        <TextBox Grid.Column="1" x:Name="PhotoOutputPathTextBox" Text="{x:Bind PhotoOutputPath, Mode=TwoWay}" IsReadOnly="True" Style="{StaticResource SettingInputStyle}"/>
+                        <Button Grid.Column="2" Content="Selecteer Map..." Click="SelectPhotoOutputPathButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                    </Grid>
+                    
                     <Grid Style="{StaticResource SettingItemStyle}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -198,6 +210,7 @@
                         <TextBox Grid.Column="1" x:Name="HotFolderPathTextBox" Text="{x:Bind HotFolderPath, Mode=TwoWay}" IsReadOnly="True" Style="{StaticResource SettingInputStyle}"/>
                         <Button Grid.Column="2" Content="Selecteer Map..." Click="SelectHotFolderButton_Click" Style="{StaticResource BrowseButtonStyle}"/>
                     </Grid>
+                    
                     <Grid Style="{StaticResource SettingItemStyle}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>

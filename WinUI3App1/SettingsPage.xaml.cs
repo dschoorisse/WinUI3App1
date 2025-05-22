@@ -56,6 +56,7 @@ namespace WinUI3App1
         public bool EnableVideos { get; set; }
         public bool EnablePrinting { get; set; }
         public string HotFolderPath { get; set; } // NIEUW
+        public string PhotoOutputPath { get; set; } // NIEUW
         public string DnpPrinterStatusFilePath { get; set; } // NIEUW
 
         // Lighting (nu onderdeel van External Equipment, maar kan hier blijven voor directe binding sliders)
@@ -112,6 +113,7 @@ namespace WinUI3App1
             EnableVideos = LoadedSettingsModel.EnableVideos;
             EnablePrinting = LoadedSettingsModel.EnablePrinting;
             HotFolderPath = LoadedSettingsModel.HotFolderPath;
+            PhotoOutputPath = LoadedSettingsModel.PhotoOutputPath;
             DnpPrinterStatusFilePath = LoadedSettingsModel.DnpPrinterStatusFilePath;
 
             InternalLedsMinimum = LoadedSettingsModel.InternalLedsMinimum;
@@ -217,6 +219,7 @@ namespace WinUI3App1
             LoadedSettingsModel.EnableVideos = EnableVideos;
             LoadedSettingsModel.EnablePrinting = EnablePrinting;
             LoadedSettingsModel.HotFolderPath = HotFolderPath;
+            LoadedSettingsModel.PhotoOutputPath = PhotoOutputPath;
             LoadedSettingsModel.DnpPrinterStatusFilePath = DnpPrinterStatusFilePath;
 
             LoadedSettingsModel.InternalLedsMinimum = InternalLedsMinimum;
@@ -250,6 +253,7 @@ namespace WinUI3App1
                 EnablePhotos != (bool)_originalValues["EnablePhotos"] ||
                 EnableVideos != (bool)_originalValues["EnableVideos"] ||
                 EnablePrinting != (bool)_originalValues["EnablePrinting"] ||
+                (PhotoOutputPath ?? "") != (_originalValues["PhotoOutputPath"] as string ?? "") ||
                 (HotFolderPath ?? "") != (_originalValues["HotFolderPath"] as string ?? "") ||
                 (DnpPrinterStatusFilePath ?? "") != (_originalValues["DnpPrinterStatusFilePath"] as string ?? "") ||
                 InternalLedsMinimum != (int)_originalValues["InternalLedsMinimum"] ||
@@ -403,6 +407,19 @@ namespace WinUI3App1
                 PhotoStripFilePath = file.Path; // Update page property
                 PhotoStripFilePathTextBox.Text = file.Path; // Update UI
                 await LoadPhotoStripPreview(file.Path);
+            }
+        }
+
+        private async void SelectPhotoOutputPathButton_Click(object sender, RoutedEventArgs e)
+        {
+            var folderPicker = new FolderPicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
+            folderPicker.FileTypeFilter.Add("*"); // Toon alle bestanden/mappen, gebruiker kiest map
+            InitializeWithWindow.Initialize(folderPicker, WindowNative.GetWindowHandle(App.MainWindow));
+            var folder = await folderPicker.PickSingleFolderAsync();
+            if (folder != null)
+            {
+                PhotoOutputPath = folder.Path; // Update page property
+                PhotoOutputPathTextBox.Text = folder.Path; // Update UI
             }
         }
 
