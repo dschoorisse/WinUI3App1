@@ -183,11 +183,41 @@
                         <TextBlock Text="Timeout QR Code Scherm (sec):" Style="{StaticResource SettingLabelStyle}"/>
                         <NumberBox Grid.Column="1" Value="{x:Bind QrCodeTimeoutSeconds, Mode=TwoWay}" Minimum="0" Maximum="300" SmallChange="1" LargeChange="10" SpinButtonPlacementMode="Inline" Style="{StaticResource CustomNumberBoxStyle}"/>
                     </Grid>
+                    <Grid Margin="0,5,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                    <TextBlock Text="Functionaliteit" Style="{StaticResource SectionHeaderStyle}"/>
-                    <ToggleSwitch Header="Foto's Inschakelen" IsOn="{x:Bind EnablePhotos, Mode=TwoWay}" Margin="0,5"/>
-                    <ToggleSwitch Header="Video's Inschakelen" IsOn="{x:Bind EnableVideos, Mode=TwoWay}" Margin="0,5"/>
-                    <ToggleSwitch Header="Afdrukken via Hot Folder Inschakelen" IsOn="{x:Bind EnablePrinting, Mode=TwoWay}" Margin="0,5"/>
+                        <ToggleSwitch Grid.Row="0" Grid.Column="0"
+                            Header="Foto's Inschakelen" 
+                            IsOn="{x:Bind EnablePhotos, Mode=TwoWay}" 
+                            HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <ToggleSwitch Grid.Row="0" Grid.Column="2"
+                            Header="Video's Inschakelen" 
+                            IsOn="{x:Bind EnableVideos, Mode=TwoWay}" 
+                            HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+
+                        <ToggleSwitch Grid.Row="1" Grid.Column="0"
+                            Header="Afdrukken via Hot Folder" 
+                            IsOn="{x:Bind EnablePrinting, Mode=TwoWay}" 
+                            HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <ToggleSwitch Grid.Row="1" Grid.Column="2"
+                            x:Name="EnableUploadingToggle" Header="Foto's uploaden naar S3" 
+                            IsOn="{x:Bind EnableUploading, Mode=TwoWay}" 
+                            HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+
+                        <ToggleSwitch Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Header="QR-code weergeven aan gebruiker" 
+                            IsOn="{x:Bind EnableShowQr, Mode=TwoWay}" 
+                            HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                     </Grid>
+
                     
                     <Grid Style="{StaticResource SettingItemStyle}">
                         <Grid.ColumnDefinitions>
@@ -307,6 +337,7 @@
                         <TextBlock Text="MQTT Wachtwoord:" Style="{StaticResource SettingLabelStyle}"/>
                         <PasswordBox Grid.Column="1" Password="{x:Bind LoadedSettingsModel.MqttPassword, Mode=TwoWay}" Style="{StaticResource CustomPasswordBoxStyle}"/>
                     </Grid>
+                    <!--
                     <Grid Style="{StaticResource SettingItemStyle}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -315,6 +346,7 @@
                         <TextBlock Text="Afbeelding Upload URL:" Style="{StaticResource SettingLabelStyle}"/>
                         <TextBox Grid.Column="1" Text="{x:Bind LoadedSettingsModel.ImageUploadUrl, Mode=TwoWay}" Style="{StaticResource SettingInputStyle}"/>
                     </Grid>
+                    -->
                     <ToggleSwitch Header="Remote Admin via MQTT" IsOn="{x:Bind LoadedSettingsModel.EnableRemoteAdminViaMqtt, Mode=TwoWay}" Margin="0,5"/>
 
                     <TextBlock Text="Logging" Style="{StaticResource SectionHeaderStyle}"/>

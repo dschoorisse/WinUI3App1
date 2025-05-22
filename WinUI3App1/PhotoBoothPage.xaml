@@ -93,6 +93,7 @@
                     <Ellipse x:Name="ProgressDot3" Width="24" Height="24" Fill="Gray"/>
                 </StackPanel>
             </Grid>
+            
 
             <StackPanel x:Name="ActionButtonsPanel" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Spacing="20" Margin="0,40,0,40" Visibility="Collapsed" Opacity="0">
                 <Button x:Name="RetakeButton" Click="RetakeButton_Click" Width="140" Height="160" Background="White" Foreground="Black" CornerRadius="16">
@@ -110,7 +111,32 @@
             </StackPanel>
 
             <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#CC000000" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                <TextBlock x:Name="OverlayText" Text="Saving..." FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
+                    <TextBlock x:Name="OverlayText" Text="Saving..." FontSize="48" FontWeight="Bold" Foreground="White" TextAlignment="Center"/>
+
+                    <Border x:Name="QrCodeBorder" Background="White" Padding="20" CornerRadius="8" Visibility="Collapsed">
+                        <Image x:Name="QrCodeImage" Width="400" Height="400" Stretch="Uniform"/>
+                    </Border>
+                    <TextBlock x:Name="QrCodeInstructionText" 
+                        Text="Scan the code to view you photo strip!" 
+                        FontSize="24" 
+                        Foreground="White" 
+                        TextWrapping="Wrap" 
+                        TextAlignment="Center"
+                        Visibility="Collapsed"
+                        MaxWidth="400"/>
+
+                    <Button x:Name="CloseQrButton" 
+                        Content="Klaar" 
+                        Click="CloseQrButton_Click" 
+                        Visibility="Collapsed" 
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource AccentButtonStyle}" 
+                        MinWidth="150"
+                        Margin="0,20,0,0"/>
+
+                    
+                </StackPanel>
             </Grid>
         </Grid>
     </Grid>

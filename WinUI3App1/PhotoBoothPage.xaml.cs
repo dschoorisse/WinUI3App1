@@ -20,6 +20,8 @@ using System.Linq;
 using Rectangle = SixLabors.ImageSharp.Rectangle;
 using Path = System.IO.Path;
 using Windows.Media.DialProtocol;
+using QRCoder;
+using Windows.Storage.Streams;
 
 namespace WinUI3App
 {
@@ -33,13 +35,16 @@ namespace WinUI3App
         private static readonly string AssetsFolderName = "Assets";
         private static readonly string PLACEHOLDER_IMAGE_PATH = System.IO.Path.Combine(AppContext.BaseDirectory, AssetsFolderName, PlaceholderImageFileName);
 
+        // Holds the S3Service instance for uploading photos
+        private S3Service _s3Service;
 
         // Color of the dots
         private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
         private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
         private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
 
-        private DispatcherTimer _reviewPageTimeoutTimer;
+        private DispatcherTimer _reviewPageTimeoutTimer; // Timer used to leave the review screen if it takes to long
+        private DispatcherTimer _qrPageTimeoutTimer; // Timer to leave the QR screen if it takes to long
 
 
         public PhotoBoothPage()
@@ -54,10 +59,15 @@ namespace WinUI3App
                 App.Logger?.Error("PhotoBoothPage: CRITICAL - Placeholder image not found at resolved path: {PlaceholderPath}", PLACEHOLDER_IMAGE_PATH);
                 // Overweeg hier een fallback of duidelijke foutmelding als de placeholder essentieel is.
             }
-
+                        
             // Initialize the timer but don't start it yet
             _reviewPageTimeoutTimer = new DispatcherTimer();
             _reviewPageTimeoutTimer.Tick += ReviewPageTimeoutTimer_Tick;
+
+            // Initialize QR Page Timer
+            _qrPageTimeoutTimer = new DispatcherTimer();
+            _qrPageTimeoutTimer.Tick += QrPageTimeoutTimer_Tick;
+
         }
 
         private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
@@ -65,6 +75,28 @@ namespace WinUI3App
             await LoadPageBackgroundAsync();
 
             LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
+
+            #region Initialise S3 service
+            // Initialise S3Service (na App.CurrentSettings en App.Logger)
+            try
+            {
+                if (App.CurrentSettings != null && App.Logger != null)
+                {
+                    _s3Service = new S3Service(App.CurrentSettings, App.Logger);
+                }
+                else
+                {
+                    App.Logger?.Error("PhotoBoothPage: Cannot initialize S3Service because App.CurrentSettings or App.Logger is null.");
+                    // Handel deze fout af, mogelijk door upload functionaliteit uit te schakelen.
+                }
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "PhotoBoothPage: Failed to initialize S3Service.");
+                // Handel fout af
+            }
+            #endregion
+
 
             #region Review timeout timer
             // Set timer interval based on loaded settings
@@ -118,6 +150,11 @@ namespace WinUI3App
             if (this.FindName("RetakeButtonLabel") is TextBlock retLabel)
             {
                 retLabel.Text = App.CurrentSettings.UiButtonRetakeText ?? "Retake";
+            }
+
+            if (this.FindName("QrCodeInstructionText") is TextBlock qrInstruction)
+            {
+                qrInstruction.Text = App.CurrentSettings.UiQrInstruction;
             }
         }
 
@@ -216,6 +253,8 @@ namespace WinUI3App
             UpdateProgressIndicator(0, false);
             ProgressIndicatorPanel.Visibility = Visibility.Visible; // Dots are made visible here (all gray)
             CameraPlaceholderImage.Visibility = Visibility.Visible;
+
+            CloseQrButton.Visibility = Visibility.Collapsed;
         }
 
         private async Task StartPhotoProcedure()
@@ -225,7 +264,6 @@ namespace WinUI3App
             // Make ProgressIndicatorPanel visible with pending dots
             ResetProcedure();
 
-            App.State = App.PhotoBoothState.ShowingInstructions;
             await ShowInstructions();
         }
 
@@ -349,9 +387,6 @@ namespace WinUI3App
         // It also sends status updates over MQTT
         private async Task TakePhotoSimulation()
         {
-            // Send status update over MQTT
-            App.State = App.PhotoBoothState.TakingPhoto;
-
             // Log the start of this photo simulation step, indicating which photo number this is (1-based)
             App.Logger.Information("TakePhotoSimulation: Starting photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
@@ -536,10 +571,11 @@ namespace WinUI3App
             App.Logger?.Debug("PhotoBoothPage: Accept button clicked, review timeout timer stopped.");
 
             // Handle the accept button click event
-            App.Logger.Information($"Accept button clicked. Current state: {App.State}");
+            App.Logger?.Information($"PhotoBoothPage: Accept button clicked. Current state: {App.State}");
 
             if (App.State != App.PhotoBoothState.ReviewingPhotos)
             {
+                App.Logger?.Warning($"PhotoBoothPage: Accept button clicked, but not in reviewing state. Current state: {App.State}");
                 return;
             }
 
@@ -579,7 +615,7 @@ namespace WinUI3App
             // Simulate saving process 
             #region Merge and save
             App.Logger?.Information("PhotoBoothPage: Starting photo processing and merging after user accept.");
-            string finalImagePath = null; // Om het pad naar de samengevoegde afbeelding op te vangen
+            string finalPhotoStripPathOnDisk = null; // Om het pad naar de samengevoegde afbeelding op te vangen
 
             // Zorg ervoor dat _photoPaths correct gevuld is met de paden naar de 3 genomen foto's
             // en dat de template pad in settings beschikbaar is.
@@ -590,12 +626,12 @@ namespace WinUI3App
                 _photoPaths.All(p => !string.IsNullOrEmpty(p) && File.Exists(p))) // Controleer of alle paden valide zijn en bestaan
             {
                 // Roep de nieuwe methode aan
-                finalImagePath = await ProcessAndMergePhotosAsync(App.CurrentSettings.PhotoStripFilePath, _photoPaths);
+                finalPhotoStripPathOnDisk = await ProcessAndMergePhotosAsync(App.CurrentSettings.PhotoStripFilePath, _photoPaths);
             }
             else
             {
                 // TODO: a severe error has occured
-                // show a popup to the user
+                // TODO: show a popup to the user
                 App.Logger?.Error("PhotoBoothPage: Cannot start merge process. Conditions not met (Settings, TemplatePath, or PhotoPaths invalid/incomplete).");
                 if (App.CurrentSettings == null) App.Logger?.Error(" - App.CurrentSettings is null.");
                 if (App.CurrentSettings != null && string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath)) App.Logger?.Error(" - PhotoStripFilePath is empty.");
@@ -614,8 +650,130 @@ namespace WinUI3App
             }
             #endregion
 
+
             OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
-            await Task.Delay(1500); // Original delay
+
+            #region S3 upload
+            string publicUrlForQrCode = null;
+            // If the merge was successful, upload to S3 and get the public URL
+            if (App.CurrentSettings.EnableUploading)
+            {
+                App.Logger?.Information("PhotoBoothPage: Uploading is enabled. Proceeding with upload.");
+
+                if (!string.IsNullOrEmpty(finalPhotoStripPathOnDisk))
+                {
+                    App.Logger?.Debug("PhotoBoothPage: Final image for upload at: {FinalImagePath}", finalPhotoStripPathOnDisk);
+
+                    // ---- UPLOAD TO S3/MINIO ----
+                    if (_s3Service != null)
+                    {
+                        OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Uploading...";
+                        App.State = App.PhotoBoothState.Uploading;
+                        string objectKeyStrip = $"strips/{DateTime.UtcNow:yyyyMMdd}/{Path.GetFileName(finalPhotoStripPathOnDisk)}";
+                        App.Logger?.Information("PhotoBoothPage: Attempting to upload photostrip to S3/MinIO with key: {ObjectKey}", objectKeyStrip);
+
+                        // TODO: check if this can raise exceptions that needs to be caught
+                        publicUrlForQrCode = await _s3Service.UploadFileAsync(finalPhotoStripPathOnDisk, objectKeyStrip);
+
+                        if (!string.IsNullOrEmpty(publicUrlForQrCode))
+                        {
+                            App.Logger?.Information("PhotoBoothPage: Photostrip uploaded successfully. Public URL: {PublicUrl}", publicUrlForQrCode);
+                        }
+                        else
+                        {
+                            App.Logger?.Error($"PhotoBoothPage: Failed to upload photostrip to S3/MinIO. The publicUrlForQrCode received from S3 service: {publicUrlForQrCode}");
+                            OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                        }
+
+                        // Upload individual pictures (single shots) async, do not wait for QR
+                        _ = Task.Run(async () =>
+                        {
+                            App.Logger?.Information("PhotoBoothPage: Starting background upload of individual photos.");
+                            for (int i = 0; i < _photoPaths.Count; i++)
+                            {
+                                if (!string.IsNullOrEmpty(_photoPaths[i]) && File.Exists(_photoPaths[i]))
+                                {
+                                    string originalPhotoName = Path.GetFileName(_photoPaths[i]);
+
+                                    // Generate a key, based on the photo strip prepend and shot nummer
+                                    string stripFilePrepend = Path.GetFileNameWithoutExtension(finalPhotoStripPathOnDisk).Replace("_photoStrip", "");
+                                    string objectKeyOriginal = $"originals/{DateTime.UtcNow:yyyyMMdd}/{stripFilePrepend}_shot{i + 1}{Path.GetExtension(_photoPaths[i])}";
+
+                                    App.Logger?.Debug($"PhotoBoothPage: Attempting to upload original photo {i + 1} ({originalPhotoName}) to S3/MinIO with key: {objectKeyOriginal}");
+                                    string uploadedOriginalUrl = await _s3Service.UploadFileAsync(_photoPaths[i], objectKeyOriginal);
+                                    if (!string.IsNullOrEmpty(uploadedOriginalUrl))
+                                    {
+                                        App.Logger?.Debug("PhotoBoothPage: Original photo {Index} uploaded successfully to {Url}", i + 1, uploadedOriginalUrl);
+                                    }
+                                    else
+                                    {
+                                        App.Logger?.Error("PhotoBoothPage: Failed to upload original photo {Index} ({FilePath})", i + 1, _photoPaths[i]);
+                                    }
+                                }
+                            }
+                            App.Logger?.Information("PhotoBoothPage: Background upload of individual photos finished.");
+                        });
+                    }
+                    else
+                    {
+                        App.Logger?.Error("PhotoBoothPage: S3Service is not initialized. Cannot upload files.");
+                        OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                        await Task.Delay(2_000);
+                    }
+                    // ---- EINDE UPLOAD ----
+                }
+                else
+                {
+                    App.Logger?.Error($"PhotoBoothPage: Processing failed while uploading. Path in finalPhotoStripPathOnDisk is empty. Skipping upload.");
+                    OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                    await Task.Delay(2_000); // Wacht even zodat gebruiker de (upload) status kan zien
+                }
+            }
+            else
+            {
+                App.Logger?.Information("PhotoBoothPage: Uploading is disabled. Skipping upload step.");
+            }
+
+            // if uploading and QR code showing is enabled
+            if ((App.CurrentSettings?.EnableShowQr ?? false) && (App.CurrentSettings?.EnableUploading ?? false))
+            {
+                App.Logger?.Debug("PhotoBoothPage: QR code showing after upload is enabled.");
+
+                OverlayText.Visibility = Visibility.Collapsed; // Verberg "Uploaden..." tekst
+
+                BitmapImage qrCodeBitmap = await GenerateQrCodeAsync(publicUrlForQrCode);
+                if (qrCodeBitmap != null)
+                {
+                    QrCodeImage.Source = qrCodeBitmap;
+                    QrCodeBorder.Visibility = Visibility.Visible;
+                    QrCodeInstructionText.Visibility = Visibility.Visible;
+                    CloseQrButton.Visibility = Visibility.Visible; // Ok or finish button to manually stop the QR code display
+                    App.State = App.PhotoBoothState.ShowingQrCode; // Nieuwe state
+                    App.Logger?.Information($"PhotoBoothPage: Showing QR Code with link to {publicUrlForQrCode}");
+
+                    // Start QR Code timeout timer
+                    int qrTimeoutSeconds = App.CurrentSettings.QrCodeTimeoutSeconds > 0 ? App.CurrentSettings.QrCodeTimeoutSeconds : 30;
+                    _qrPageTimeoutTimer.Interval = TimeSpan.FromSeconds(qrTimeoutSeconds);
+                    _qrPageTimeoutTimer.Start();
+                    App.Logger?.Information($"PhotoBoothPage: QR code display timeout set to {qrTimeoutSeconds} seconds.");
+                    return; // Stop the flow here, the QR timer handles further navigation 
+                }
+                else
+                {
+                    App.Logger?.Error("PhotoBoothPage: Failed to generate QR code image.");
+                    OverlayText.Text = App.CurrentSettings?.UiQrError ?? "Cannot create QR code!";
+                    OverlayText.Visibility = Visibility.Visible;
+                }
+
+            }
+            else
+            {
+                App.Logger?.Debug("PhotoBoothPage: QR code showing after upload is disabled.");
+            }          
+            #endregion
+
+            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
+            await Task.Delay(1500); // Original delay, this show the 'Done!' message on the screen
 
             // If no error occurred, proceed to the next step
             // we do not need to remove the overlay, the whole page is faded out and it will look nice
@@ -663,6 +821,21 @@ namespace WinUI3App
             await StartPhotoProcedure();
         }
 
+        private void CloseQrButton_Click(object sender, RoutedEventArgs e)
+        {
+            App.Logger?.Debug("PhotoBoothPage: Close QR button clicked.");
+            _qrPageTimeoutTimer.Stop(); // Stop the timeout timer
+
+            // Hide QR elements and OverlayGrid for fade-out of the page
+            QrCodeBorder.Visibility = Visibility.Collapsed;
+            QrCodeInstructionText.Visibility = Visibility.Collapsed;
+            CloseQrButton.Visibility = Visibility.Collapsed; // Hide the button
+            OverlayText.Visibility = Visibility.Collapsed;
+
+            App.State = App.PhotoBoothState.Finished; 
+            NavigateBackToMainPage("QrCodeClosedManually");
+        }
+
         // Timer tick event handler
         private void ReviewPageTimeoutTimer_Tick(object sender, object e)
         {
@@ -677,18 +850,26 @@ namespace WinUI3App
             NavigateBackToMainPage("Timeout"); // Call the extracted method
         }
 
+        // Event Handler for QR Page Timeout
+        private void QrPageTimeoutTimer_Tick(object sender, object e)
+        {
+            _qrPageTimeoutTimer.Stop();
+            App.Logger?.Debug("PhotoBoothPage: QR code display timeout reached. Navigating back to MainPage.");
+
+            // Hide QR elements and OverlayGrid for fade-out of the page
+            QrCodeBorder.Visibility = Visibility.Collapsed;
+            QrCodeInstructionText.Visibility = Visibility.Collapsed; // Hide instruction text
+            OverlayText.Visibility = Visibility.Collapsed; // Hide error messages
+            CloseQrButton.Visibility = Visibility.Collapsed; // Hide OK button
+            // OverlayGrid zelf wordt meegepakt in de page fade-out in NavigateBackToMainPage
+
+            App.State = App.PhotoBoothState.QrCodeTimedOut; // Of terug naar Finished/Idle
+            NavigateBackToMainPage("QrCodeTimeout");
+        }
+
         private async void NavigateBackToMainPage(string reason)
         {
             App.Logger?.Information("PhotoBoothPage: Navigating back to MainPage. Reason: {Reason}", reason);
-
-            // Ensure App.State reflects that the photobooth process is no longer active or is finishing.
-            // If finishing normally (Accept), it's already set to Finished.
-            // If timing out, we might set it to Idle or a specific TimedOut state.
-            if (reason.Contains("Timeout")) // Check if reason indicates a timeout
-            {
-                App.State = App.PhotoBoothState.Idle; // Or App.PhotoBoothState.ReviewingPhotosTimedOut if you add that state
-            }
-            // If called after "Accept", App.State would have been set to Finished already.
 
             #region Fade out page
             // --- Fade out the current page (PhotoBoothPage) ---
@@ -752,6 +933,42 @@ namespace WinUI3App
                 App.Logger?.Error("PhotoBoothPage: Could not find a suitable Frame to navigate back to MainPage.");
             }
             #endregion
+        }
+
+        // Generate a QR code
+        private async Task<BitmapImage> GenerateQrCodeAsync(string payload)
+        {
+            if (string.IsNullOrEmpty(payload)) return null;
+
+            try
+            {
+                App.Logger?.Debug("PhotoBoothPage: Generating QR code for payload: {Payload}", payload);
+                QRCodeGenerator qrGenerator = new QRCodeGenerator();
+                QRCodeData qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q); // ECCLevel.Q is 25% error correction
+
+                // QRCoder.BitmapByteQRCode genereert een byte array voor een BMP
+                BitmapByteQRCode qrCode = new BitmapByteQRCode(qrCodeData);
+                byte[] qrCodeAsBitmapByteArr = qrCode.GetGraphic(20); // pixelsPerModule: 20
+
+                // Converteer byte array naar BitmapImage voor WinUI
+                using (var ms = new InMemoryRandomAccessStream())
+                {
+                    using (var writer = new DataWriter(ms.GetOutputStreamAt(0)))
+                    {
+                        writer.WriteBytes(qrCodeAsBitmapByteArr);
+                        await writer.StoreAsync();
+                    }
+                    var image = new BitmapImage();
+                    await image.SetSourceAsync(ms);
+                    App.Logger?.Information("PhotoBoothPage: QR code BitmapImage generated successfully.");
+                    return image;
+                }
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "PhotoBoothPage: Failed to generate QR code.");
+                return null;
+            }
         }
 
         private async Task<string> ProcessAndMergePhotosAsync(string templateOverlayPath, List<string> individualPhotoPaths)

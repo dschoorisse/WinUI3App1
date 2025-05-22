@@ -48,8 +48,6 @@ namespace WinUI3App1
         public static BitmapImage PreloadedBackgroundImage { get; private set; }
 
 
-
-
         public App()
         {
             this.InitializeComponent();
@@ -825,6 +823,8 @@ namespace WinUI3App1
             Saving, 
             Processing,
             Uploading,
+            ShowingQrCode,
+            QrCodeTimedOut,
             Finished
         }
 

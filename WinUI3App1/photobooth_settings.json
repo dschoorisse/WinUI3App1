@@ -4,7 +4,6 @@
     "BackgroundImagePath": "",
     "LastSuccessfullyDownloadedImageUrl": "",
     "LastSuccessfullyDownloadedImageHash": "",
-
     "PhotoStripLayoutIndex": 0,
     "PhotoStripTemplatePath": "",
     "TimeoutSeconds": 60,
@@ -42,7 +41,11 @@
     "UiCountdown1": "1",
     "UiCountdownSmile": "📸",
     "UiSavingMessage": "Opslaan...",
+    "UiUploadingMessage": "Uploaden...",
     "UiDoneMessage": "Klaar!",
+    "UiQrInstruction": "Scan the code to view you photo strip!",
+    "UiUploadError": "Fout bij het uploaden!",
+    "UiQrError": "Kan geen QR-code genereren!",
     "UiButtonAcceptText": "OK",
     "UiButtonRetakeText": "Opnieuw",
     "ReviewPageTimeoutSeconds": 30,
@@ -51,5 +54,13 @@
         "TemplateDesiredTopMargin": 80,
         "TemplateDesiredBottomMargin": 500,
         "SpacingBetweenPhotos": 25
+    },
+    "Minio": {
+        "ServiceUrl": "https://minio-pwkc8s80k400wcggckk008g0.116.203.75.25.sslip.io",
+        "BucketName": "photobooth-media",
+        "AccessKey": "uZmf1PRbtm4iHpQMiXZR",
+        "SecretKey": "lu7CsygGP6hUptC3GxhgrkNX6h5Yr7cViJaBTMOj",
+        "UseHttp": false,
+        "PublicBaseUrl": "https://minio-pwkc8s80k400wcggckk008g0.116.203.75.25.sslip.io"
     }
 }

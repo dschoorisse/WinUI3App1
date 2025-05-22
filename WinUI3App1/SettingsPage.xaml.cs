@@ -55,6 +55,8 @@ namespace WinUI3App1
         public bool EnablePhotos { get; set; }
         public bool EnableVideos { get; set; }
         public bool EnablePrinting { get; set; }
+        public bool EnableUploading { get; set; }
+        public bool EnableShowQr { get; set; }
         public string HotFolderPath { get; set; } // NIEUW
         public string PhotoOutputPath { get; set; } // NIEUW
         public string DnpPrinterStatusFilePath { get; set; } // NIEUW
@@ -112,6 +114,8 @@ namespace WinUI3App1
             EnablePhotos = LoadedSettingsModel.EnablePhotos;
             EnableVideos = LoadedSettingsModel.EnableVideos;
             EnablePrinting = LoadedSettingsModel.EnablePrinting;
+            EnableUploading = LoadedSettingsModel.EnableUploading;
+            EnableShowQr = LoadedSettingsModel.EnableShowQr;
             HotFolderPath = LoadedSettingsModel.HotFolderPath;
             PhotoOutputPath = LoadedSettingsModel.PhotoOutputPath;
             DnpPrinterStatusFilePath = LoadedSettingsModel.DnpPrinterStatusFilePath;
@@ -136,6 +140,8 @@ namespace WinUI3App1
             _originalValues["ReviewPageTimeoutSeconds"] = LoadedSettingsModel.ReviewPageTimeoutSeconds;
             _originalValues["QrCodeTimeoutSeconds"] = LoadedSettingsModel.QrCodeTimeoutSeconds;
 
+            _originalValues["EnableUploading"] = LoadedSettingsModel.EnableUploading;
+            _originalValues["EnableShowQr"] = LoadedSettingsModel.EnableShowQr;
             _originalValues["EnablePhotos"] = LoadedSettingsModel.EnablePhotos;
             _originalValues["EnableVideos"] = LoadedSettingsModel.EnableVideos;
             _originalValues["EnablePrinting"] = LoadedSettingsModel.EnablePrinting;
@@ -158,7 +164,7 @@ namespace WinUI3App1
             _originalValues["MqttBrokerPort"] = LoadedSettingsModel.MqttBrokerPort;
             _originalValues["MqttUsername"] = LoadedSettingsModel.MqttUsername;
             _originalValues["MqttPassword"] = LoadedSettingsModel.MqttPassword;
-            _originalValues["ImageUploadUrl"] = LoadedSettingsModel.ImageUploadUrl;
+            //_originalValues["ImageUploadUrl"] = LoadedSettingsModel.ImageUploadUrl;
             _originalValues["EnableRemoteAdminViaMqtt"] = LoadedSettingsModel.EnableRemoteAdminViaMqtt;
             _originalValues["LogLevel"] = LoadedSettingsModel.LogLevel;
 
@@ -218,6 +224,8 @@ namespace WinUI3App1
             LoadedSettingsModel.EnablePhotos = EnablePhotos;
             LoadedSettingsModel.EnableVideos = EnableVideos;
             LoadedSettingsModel.EnablePrinting = EnablePrinting;
+            LoadedSettingsModel.EnableUploading = EnableUploading;
+            LoadedSettingsModel.EnableShowQr = EnableShowQr;
             LoadedSettingsModel.HotFolderPath = HotFolderPath;
             LoadedSettingsModel.PhotoOutputPath = PhotoOutputPath;
             LoadedSettingsModel.DnpPrinterStatusFilePath = DnpPrinterStatusFilePath;
@@ -275,7 +283,7 @@ namespace WinUI3App1
                 LoadedSettingsModel.MqttBrokerPort != (int)_originalValues["MqttBrokerPort"] ||
                 (LoadedSettingsModel.MqttUsername ?? "") != (_originalValues["MqttUsername"] as string ?? "") ||
                 (LoadedSettingsModel.MqttPassword ?? "") != (_originalValues["MqttPassword"] as string ?? "") ||
-                (LoadedSettingsModel.ImageUploadUrl ?? "") != (_originalValues["ImageUploadUrl"] as string ?? "") ||
+                //(LoadedSettingsModel.ImageUploadUrl ?? "") != (_originalValues["ImageUploadUrl"] as string ?? "") ||
                 LoadedSettingsModel.EnableRemoteAdminViaMqtt != (bool)_originalValues["EnableRemoteAdminViaMqtt"] ||
                 (LoadedSettingsModel.LogLevel ?? "") != (_originalValues["LogLevel"] as string ?? ""))
             {

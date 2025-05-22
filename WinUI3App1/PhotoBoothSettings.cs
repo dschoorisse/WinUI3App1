@@ -28,10 +28,14 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiCountdown3 { get; set; } = "3";
         public string UiCountdown2 { get; set; } = "2";
         public string UiCountdown1 { get; set; } = "1";
-        public string UiCountdown0 { get; set; } = "📸"; // Default to existing smiley, can be text like "Smile!"
+        public string UiCountdown0 { get; set; } = "📸"; // Default to camera smiley, can be text like "Smile!"
         public string UiSavingMessage { get; set; } = "Saving...";
+        public string UiUploadingMessage { get; set; } = "Uploading...";
         public string UiDoneMessage { get; set; } = "Done!";
-        public bool HorizontalReviewLayout { get; set; } = true; // NIEUW: Standaard horizontaal
+        public string UiQrInstruction { get; set; } = "Scan the code to view you photo strip!";
+        public string UiUploadError { get; set; } = "Error while uploading!";
+        public string UiQrError { get; set; } = "Cannot create QR code!";
+        public bool HorizontalReviewLayout { get; set; } = true;
 
         // Texts for the Accept/Retake buttons on PhotoBoothPage's review screen
         // Note: Your XAML for these buttons currently has hardcoded text.
@@ -60,7 +64,9 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public bool EnablePhotos { get; set; } = true;
         public bool EnableVideos { get; set; } = false; // Default to false as per current example
         public bool EnablePrinting { get; set; } = true;
-
+        public bool EnableUploading { get; set; } = true;
+        public bool EnableShowQr { get; set; } = true;
+        
         // External Equipment Settings
         public string LightPrinterMqttTopic { get; set; } = $"photobooth/{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}/light/printer"; // Voorbeeld topic
         public string InternalLightMqttTopic { get; set; } = $"photobooth/{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}/light/internal";
@@ -76,8 +82,11 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public int MqttBrokerPort { get; set; } = 1883;
         public string MqttUsername { get; set; } = "";
         public string MqttPassword { get; set; } = "d8232msn2987sd"; // Example password (TODO: secure storage for production)
-        public string ImageUploadUrl { get; set; } = "";
+        //public string ImageUploadUrl { get; set; } = "";
         public bool EnableRemoteAdminViaMqtt { get; set; } = true; // Was al aanwezig
+
+        // Section for S3 settings
+        public MinioSettings Minio { get; set; } = new MinioSettings();
 
         // Hidden/Advanced Settings (Examples of settings not on the UI but configurable via JSON)
         public bool AutoStartPhotoSequence { get; set; } = false; // E.g., auto-start after a delay
@@ -115,6 +124,17 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         // Je zou hier later een target aspect ratio of vaste hoogte kunnen toevoegen.
         // public double TargetPhotoSlotAspectRatio { get; set; } = 16.0 / 9.0; // Voorbeeld
     }
+
+    public class MinioSettings // NIEUWE subklasse voor MinIO instellingen
+    {
+        public string ServiceUrl { get; set; } = "https://s3.devideopaal.nl"; // Je endpoint (pas poort aan indien nodig, of laat weg als standaard HTTP/HTTPS)
+        public string BucketName { get; set; } = "photobooth-media"; // Voorbeeld bucket naam
+        public string AccessKey { get; set; } = ""; 
+        public string SecretKey { get; set; } = ""; 
+        public bool UseHttp { get; set; } = false; // Bepaalt of http of https wordt gebruikt voor de ServiceUrl
+        public string PublicBaseUrl { get; set; } = "https://s3.devideopaal.nl"; // De basis URL voor publieke links
+    }
+
 
 
     // Helper extension for cleaning strings (optional, place in a utility class if you have one)
