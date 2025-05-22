@@ -389,8 +389,9 @@ namespace WinUI3App1
 
             if (!Directory.Exists(logsDirectory)) Directory.CreateDirectory(logsDirectory);
 
+            // TODO: retrieve this from settings
             var loggerConfiguration = new LoggerConfiguration()
-                .MinimumLevel.Debug() // Overall minimum level for logs processed by Serilog
+                .MinimumLevel.Verbose() // Overall minimum level for logs processed by Serilog
                 .Enrich.FromLogContext()
                 .Enrich.WithProperty("PhotoboothID", PhotoboothIdentifier ?? "UnknownID_AtLoggingConfig") // Use PhotoboothIdentifier if available
                 .Enrich.WithProperty("Application", "PhotoBoothApp");
@@ -412,6 +413,10 @@ namespace WinUI3App1
             // --- Debug Sink (remains the same) ---
             // TODO: change this so that only warnings are logged to the console
             //loggerConfiguration.WriteTo.Debug(); // Standard Visual Studio debug output (usually text-based)
+            // Disabled; consumes to much CPU and is not needed in production
+
+            // TODO: create a sink that logs to a remote server
+            // Maybe HTTP or other system
 
             Logger = loggerConfiguration.CreateLogger();
             Log.Logger = Logger; // Assign to Serilog's global static logger
