@@ -10,6 +10,14 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public DateTime LastModifiedUtc { get; set; } = DateTime.UtcNow; // Last modified date
         public string PhotoboothId { get; set; } = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}"; // Ensure safe ID
 
+        // DNP Printer Settings 
+        // TODO; maybe move to a separate class if it gets too complex
+        public int DnpStatusFileMaxAgeMinutes { get; set; } = 5; // Default 5 minuten
+        public int PrinterIdleLightDelaySeconds { get; set; } = 20; // Default 20 seconden
+        public bool ShowPrinterWarnings { get; set; } = true;
+        public string HotFolderPath { get; set; } = ""; 
+        public string DnpPrinterStatusFilePath { get; set; }
+
         // Background image
         public string BackgroundImagePath { get; set; } = ""; // Example: "Assets/default_background.jpg" or leave empty
         public string RemoteBackgroundImageUrl { get; set; } = "";    // URL from where to download the background
@@ -49,11 +57,6 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         // Timeouts and durations
         public int ReviewPageTimeoutSeconds { get; set; } = 30; // Default to 30 seconds
         public int QrCodeTimeoutSeconds { get; set; } = 60; // NIEUW
-
-        // Printer
-        public bool ShowPrinterWarnings { get; set; } = true;
-        public string HotFolderPath { get; set; } = ""; // NIEUW: Voor DNP Hot Folder
-        public string DnpPrinterStatusFilePath { get; set; } // NIEUW
 
         // Output file paths
         public string PhotoOutputPath { get; set; } = ""; // NIEUW: Voor foto's

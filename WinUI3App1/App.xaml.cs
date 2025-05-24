@@ -17,6 +17,7 @@ using Windows.Storage;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Dispatching;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
@@ -47,6 +48,21 @@ namespace WinUI3App1
         public static DateTime lastPreloadBackgroundUtc { get; set; }
         public static BitmapImage PreloadedBackgroundImage { get; private set; }
 
+        // For DNP Status Service
+        public static DnpStatusService DnpStatusMonitor { get; private set; }
+        public static PrinterStatusEventArgs LastKnownPrinterStatus { get; private set; }  // Om de laatste status vast te houden
+        private static System.Diagnostics.Stopwatch _printingFinishedStopwatch = new System.Diagnostics.Stopwatch(); // Moet static zijn als methode static is
+        private static string _previousPrinterStatusForLight; // Moet static zijn
+
+        // Printer light control
+        private static System.Diagnostics.Stopwatch _lightStandbyDelayStopwatch = new System.Diagnostics.Stopwatch();
+        private static string _previousLightControlStatus; // To track changes for light control logic
+        private static string _currentLightCommandSent; // To track the last command sent to the light
+        private const string PRINTER_LIGHT_MQTT_TOPIC = "printer-light/command"; // TODO: create configuration item
+        private static DispatcherQueueTimer _printerLightFinishedToStandbyTimer; // TODO: create configuration item
+        private const string LIGHT_CMD_STANDBY = "STANDBY";
+        private const string LIGHT_CMD_PRINTING = "PRINTING";
+        private const string LIGHT_CMD_FINISHED = "FINISHED";
 
         public App()
         {
@@ -123,6 +139,12 @@ namespace WinUI3App1
             // 5. Main window creation and Fullscreen Logic ---
             MainWindow = new MainWindow();
             Logger.Debug("Main window created");
+
+            
+
+
+            // Initialisation of DNP Status Service
+            InitializeAndStartDnpStatusMonitoring();
 
             const string targetPhotoboothComputerName = "DESKTOP-NJDEOAK"; // User's hardcoded name, TODO: create list and populoate from JSON
             string currentComputerName = Environment.MachineName;
@@ -209,7 +231,11 @@ namespace WinUI3App1
 
             // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
             SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
-                       
+
+
+            // 9. Set initial light states (LEDs)
+            SetInitialPrinterLightState();
+
             #region Setup heartbeat timers
             // MQTT
             try
@@ -278,6 +304,276 @@ namespace WinUI3App1
             }
         }
 
+        // Initialize and start the DNP Status Monitoring service
+        private void InitializeAndStartDnpStatusMonitoring()
+        {
+            // ---- HIER DE TIMER INITIALISEREN ----
+            if (MainWindow?.DispatcherQueue != null)
+            {
+                _printerLightFinishedToStandbyTimer = MainWindow.DispatcherQueue.CreateTimer();
+                _printerLightFinishedToStandbyTimer.Tick += PrinterLightFinishedToStandbyTimer_Tick;
+                // Interval wordt later gezet wanneer de timer gestart wordt.
+                Logger.Debug("App: _printerLightFinishedToStandbyTimer initialized.");
+            }
+            else
+            {
+                // Dit is een kritieke fout als de timer nodig is.
+                Logger.Error("App: MainWindow.DispatcherQueue not available at timer initialization point. _printerLightFinishedToStandbyTimer will be null.");
+            }
+            // ------------------------------------
+
+            // Called in OnLaunched AFTER MainWindow, CurrentSettings and Logger are initialized.
+            if (CurrentSettings == null) // Logger wordt gecheckt in de DnpStatusService constructor
+            {
+                System.Diagnostics.Debug.WriteLine("App: Cannot initialize DnpStatusService, CurrentSettings is not ready.");
+                Logger?.Error("App: Cannot initialize DnpStatusService, CurrentSettings is not ready.");
+                // Set a default status so LastKnownPrinterStatus is not null
+                LastKnownPrinterStatus = new PrinterStatusEventArgs("Settings Missing", isJsonAccessible: false, isConnected: false, isHotFolderActive: false);
+                return;
+            }
+            if (MainWindow?.DispatcherQueue == null)
+            {
+                System.Diagnostics.Debug.WriteLine("App: Cannot initialize DnpStatusService, MainWindow.DispatcherQueue is not ready.");
+                Logger?.Error("App: Cannot initialize DnpStatusService, MainWindow.DispatcherQueue is not ready.");
+                LastKnownPrinterStatus = new PrinterStatusEventArgs("Dispatcher Missing", isJsonAccessible: false, isConnected: false, isHotFolderActive: false);
+                return;
+            }
+
+            try
+            {
+                Logger?.Debug("App: Initializing DnpStatusService...");
+                // Pass the main window's dispatcher queue to the service
+                DnpStatusMonitor = new DnpStatusService(CurrentSettings, Logger, MainWindow.DispatcherQueue);
+                DnpStatusMonitor.PrinterStatusUpdated += OnPrinterStatusUpdated; // Abonneer op het event
+
+                // Start monitoring only if a DNP status file path is actually configured
+                if (!string.IsNullOrEmpty(CurrentSettings.DnpPrinterStatusFilePath))
+                {
+                    DnpStatusMonitor.StartMonitoring();
+                    Logger?.Information("App: DNP Status Monitoring service started for file: {FilePath}", CurrentSettings.DnpPrinterStatusFilePath);
+                }
+                else
+                {
+                    Logger?.Warning("App: DNP Printer Status File Path is not configured in settings. DNP Status Monitoring will not start automatically.");
+                }
+                // Set initial status based on what DnpStatusService constructor might have set
+                LastKnownPrinterStatus = DnpStatusMonitor.CurrentPrinterStatus ?? new PrinterStatusEventArgs(status: "Initializing", isJsonAccessible: !string.IsNullOrEmpty(CurrentSettings.DnpPrinterStatusFilePath));
+
+            }
+            catch (Exception ex)
+            {
+                Logger?.Error(ex, "App: Failed to initialize or start DnpStatusService.");
+                LastKnownPrinterStatus = new PrinterStatusEventArgs("Init Exception", isJsonAccessible: false, isConnected: false, isHotFolderActive: false);
+            }
+        }
+
+        // Event handler for printer status updates
+        private static async void OnPrinterStatusUpdated(object sender, PrinterStatusEventArgs e)
+        {
+            LastKnownPrinterStatus = e; // Update de static property
+            Logger?.Information("App: Printer status updated via DnpStatusService event - Status: {Status}, Connected: {IsConnected}, HotFolderActive: {IsHotFolderActive}, JSONOK: {IsJsonOK}, Remaining: {Remaining}",
+                e.Status, e.IsPrinterLikelyConnected, e.IsHotFolderUtilityActive, e.IsJsonFileAccessible, e.RemainingMedia);
+
+            // 1. Stuur de status naar MQTT (als MQTT service bestaat en verbonden is)
+            await PublishPrinterStatusToMqttAsync(e);
+
+            // 2. Stuur de verlichting aan (jouw logica hier)
+            await ControlPrinterLightBasedOnStatus(e);
+        }
+
+        private static async Task PublishPrinterStatusToMqttAsync()
+        {
+            await PublishPrinterStatusToMqttAsync(LastKnownPrinterStatus); // Gebruik de laatste bekende status
+        }
+
+        // NIEUWE METHODE om printer status naar MQTT te sturen
+        private static async Task PublishPrinterStatusToMqttAsync(PrinterStatusEventArgs status)
+        {
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
+            {
+                string topic = $"photobooth/{PhotoboothIdentifier}/printer/status";
+                try
+                {
+                    // Maak een anoniem object of een DTO voor de JSON payload
+                    var payloadObject = new
+                    {
+                        timestamp = DateTime.UtcNow.ToString("o"), // ISO 8601
+                        status.Status, // printer status string
+                        status.IsPrinterLikelyConnected,
+                        status.IsHotFolderUtilityActive,
+                        status.IsJsonFileAccessible,
+                        status.RemainingMedia,
+                        status.HeadTempCelsius,
+                        status.HumidityPercentage,
+                        status.LifeCounter,
+                        status.SerialNumber,
+                        status.RawStatus,
+                        jsonFileTimestamp = status.JsonFileTimestamp?.ToString("o"), // ISO 8601, nullable
+                        lastStatusChange = status.LastStatusChangeTime?.ToString("o") // ISO 8601, nullable
+                    };
+                    // Gebruik System.Text.Json voor serialisatie
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payloadObject,
+                        new System.Text.Json.JsonSerializerOptions
+                        {
+                            WriteIndented = false, // Compact voor MQTT
+                            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull // Optioneel: nul-waarden niet meesturen
+                        });
+
+                    await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, retain: true); // Retain last status
+                    App.Logger?.Debug("App: Printer status published to MQTT topic {Topic}", topic);
+                }
+                catch (Exception ex)
+                {
+                    App.Logger?.Error(ex, "App: Failed to publish printer status to MQTT topic {Topic}", topic);
+                }
+            }
+        }
+        private static async void PrinterLightFinishedToStandbyTimer_Tick(object sender, object e)
+        {
+            _printerLightFinishedToStandbyTimer.Stop(); // Timer should only fire once per FINISHED state
+            Logger?.Debug("App: Printer light FINISHED to STANDBY timer elapsed.");
+
+            // Only send STANDBY if the current command is still FINISHED
+            // (to avoid overriding a newer command if printer status changed again quickly)
+            if (_currentLightCommandSent == LIGHT_CMD_FINISHED)
+            {
+                await SendPrinterLightCommandAsync(LIGHT_CMD_STANDBY);
+            }
+        }
+
+        private static async Task SendPrinterLightCommandAsync(string command)
+        {
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+            {
+                if (_currentLightCommandSent == command && command != LIGHT_CMD_PRINTING && command != LIGHT_CMD_FINISHED) // Avoid spamming STANDBY if already in STANDBY
+                {
+                    // Exception for PRINTING and FINISHED as they might be re-triggered if status flaps.
+                    // For STANDBY, only send if it's a change.
+                    // This logic can be refined based on how "sticky" you want commands to be.
+                    Logger?.Verbose("App: Light command '{Command}' is the same as last sent. Not sending again.", command);
+                    return;
+                }
+
+                Logger?.Information("App: Sending printer light command '{Command}' to topic '{Topic}'.", command, PRINTER_LIGHT_MQTT_TOPIC);
+                try
+                {
+                    await MqttServiceInstance.PublishAsync(PRINTER_LIGHT_MQTT_TOPIC, command, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, retain: false);
+                    _currentLightCommandSent = command; // Update last sent command
+                }
+                catch (Exception ex)
+                {
+                    Logger?.Error(ex, "App: Failed to publish light command '{Command}'", command);
+                }
+            }
+            else
+            {
+                Logger?.Warning("App: MQTT service not available. Cannot publish light command '{Command}'.", command);
+            }
+        }
+
+
+        private static async Task ControlPrinterLightBasedOnStatus(PrinterStatusEventArgs currentStatusArgs)
+        {
+            if (currentStatusArgs == null)
+            {
+                Logger?.Warning("ControlPrinterLight: Received null currentStatusEventArgs, cannot control light.");
+                return;
+            }
+
+            string newDesiredLightState = null; // Represents the conceptual state, not necessarily the command string yet
+            string currentPrinterStatus = currentStatusArgs.Status;
+            bool isPrinterConnected = currentStatusArgs.IsPrinterLikelyConnected;
+
+            if (!isPrinterConnected && App.CurrentSettings?.EnablePrinting == true)
+            {
+                Logger?.Warning("ControlPrinterLight: Printer not connected (printing enabled). Light to STANDBY/ERROR.");
+                newDesiredLightState = LIGHT_CMD_STANDBY; // Or a specific "ERROR_NO_PRINTER" command
+                _printerLightFinishedToStandbyTimer.Stop(); // Stop any pending transition to STANDBY
+            }
+            else if (currentPrinterStatus == PrinterStatuses.Printing) //
+            {
+                newDesiredLightState = LIGHT_CMD_PRINTING;
+                _printerLightFinishedToStandbyTimer.Stop();
+            }
+            else if (currentPrinterStatus == PrinterStatuses.Idle) //
+            {
+                if (_previousPrinterStatusForLight == PrinterStatuses.Printing) // Just finished printing
+                {
+                    newDesiredLightState = LIGHT_CMD_FINISHED;
+                    // Start the timer to transition from FINISHED to STANDBY
+                    int delaySeconds = App.CurrentSettings?.PrinterIdleLightDelaySeconds ?? 20;
+                    _printerLightFinishedToStandbyTimer.Interval = TimeSpan.FromSeconds(delaySeconds);
+                    _printerLightFinishedToStandbyTimer.Start();
+                    Logger?.Debug("ControlPrinterLight: Printer finished. Light to FINISHED. Standby timer started for {Delay}s.", delaySeconds);
+                }
+                else if (_currentLightCommandSent != LIGHT_CMD_STANDBY && !_printerLightFinishedToStandbyTimer.IsRunning)
+                {
+                    // If it's idle, wasn't just printing, and the FINISHED->STANDBY timer isn't running,
+                    // it should probably be STANDBY.
+                    newDesiredLightState = LIGHT_CMD_STANDBY;
+                }
+                // If timer is running, newDesiredLightState remains null, current light command (_currentLightCommandSent) should be FINISHED.
+                // The timer tick will handle the transition to STANDBY.
+            }
+            // Handle specific error states from DNP JSON to set a distinct error light
+            else if (currentStatusArgs.Status != null &&
+                     (currentStatusArgs.Status == PrinterStatuses.PaperOut ||         //
+                      currentStatusArgs.Status == PrinterStatuses.RibbonOut ||        //
+                      currentStatusArgs.Status == PrinterStatuses.CoverOpen ||        //
+                      currentStatusArgs.Status == PrinterStatuses.PaperJam ||         //
+                      currentStatusArgs.Status.Contains("ERR", StringComparison.OrdinalIgnoreCase))) // Generic error check
+            {
+                Logger?.Warning("ControlPrinterLight: Printer error state ({Status}). Light to STANDBY/ERROR.", currentStatusArgs.Status);
+                newDesiredLightState = LIGHT_CMD_STANDBY; // Or a specific "ERROR_PRINTER_ISSUE" command
+                _printerLightFinishedToStandbyTimer.Stop();
+            }
+            else // Default to STANDBY for other unknown/unhandled states or if printing is disabled
+            {
+                if (_currentLightCommandSent != LIGHT_CMD_STANDBY && !_printerLightFinishedToStandbyTimer.IsRunning)
+                {
+                    newDesiredLightState = LIGHT_CMD_STANDBY;
+                }
+                _printerLightFinishedToStandbyTimer.Stop();
+            }
+
+            if (!string.IsNullOrEmpty(newDesiredLightState) && _currentLightCommandSent != newDesiredLightState)
+            {
+                // Use Task.Run to ensure SendPrinterLightCommandAsync doesn't block this thread
+                // if MqttServiceInstance.PublishAsync has internal awaits.
+                _ = Task.Run(async () => await SendPrinterLightCommandAsync(newDesiredLightState));
+            }
+
+            _previousPrinterStatusForLight = currentPrinterStatus;
+        }
+
+        // Roep deze methode aan bij het opstarten van de applicatie, nadat MQTT is geïnitialiseerd en verbonden.
+        // En mogelijk ook wanneer de DNP Status voor het eerst als "Idle" wordt gedetecteerd.
+        public static void SetInitialPrinterLightState()
+        {
+            if (MqttServiceInstance != null && MqttServiceInstance.IsConnected)
+            {
+                string initialCommand = "STANDBY";
+                Logger?.Information("App: Setting initial printer light state to '{LightCommand}' on topic '{Topic}'.", initialCommand, PRINTER_LIGHT_MQTT_TOPIC);
+                _ = Task.Run(async () => {
+                    try
+                    {
+                        await MqttServiceInstance.PublishAsync(PRINTER_LIGHT_MQTT_TOPIC, initialCommand, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, retain: false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger?.Error(ex, "App: Failed to publish initial light command '{LightCommand}'", initialCommand);
+                    }
+                });
+                // Initialize _previousLightControlStatus, so the first real status update is seen as a change if different from Idle/Standby
+                // If printer starts as Idle, ControlPrinterLightBasedOnStatus will send STANDBY if logic matches.
+                // _previousLightControlStatus = PrinterStatuses.Idle; // Or null initially
+            }
+            else
+            {
+                Logger?.Warning("App: MQTT not connected, cannot set initial printer light state.");
+            }
+        }
+
         private async void MqttService_ConnectionStatusChanged(object? sender, bool isConnected)
         {
             if (isConnected)
@@ -288,7 +584,8 @@ namespace WinUI3App1
                 // Now that MQTT is connected and initial "online" is sent,
                 // publish the full current settings to the /settings/current_state topic.
                 Logger.Information("MQTT: Connection established, now publishing full current settings for {PhotoboothId}.", PhotoboothIdentifier);
-                await PublishCurrentSettingsToMqttAsync(CurrentSettings); 
+                await PublishCurrentSettingsToMqttAsync(CurrentSettings); // Maybe have to change to fire and forget _ = if this holds up the UI thread
+                await PublishPrinterStatusToMqttAsync();
             }
             else
             {
@@ -451,6 +748,12 @@ namespace WinUI3App1
                 Logger.Information("MQTT Service disposed on window close for Photobooth ID: {PhotoboothId}.", PhotoboothIdentifier);
             }
             // --- End of MQTT Service Disposal ---
+
+            // --- Stop DNP Status Monitoring ---
+            DnpStatusMonitor?.StopMonitoring();
+            DnpStatusMonitor?.Dispose();
+            Logger?.Debug("DnpStatusService disposed on window close.");
+            // --- End of DNP Status Monitoring Disposal ---
 
             // --- Flush logs and close application ---
             Logger.Information("Flushing logs and closing application.");
