@@ -33,6 +33,8 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiUploadingMessage { get; set; } = "Uploading...";
         public string UiDoneMessage { get; set; } = "Done!";
         public string UiQrInstruction { get; set; } = "Scan the code to view you photo strip!";
+        public string UiQrCloseButton { get; set; } = "OK";
+        
         public string UiUploadError { get; set; } = "Error while uploading!";
         public string UiQrError { get; set; } = "Cannot create QR code!";
         public bool HorizontalReviewLayout { get; set; } = true;

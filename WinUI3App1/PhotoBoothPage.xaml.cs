@@ -128,13 +128,8 @@ namespace WinUI3App
         {
             if (App.CurrentSettings == null)
             {
+                // No settings available, log a warning and return. The UI will use fallbacks set in the XAML. 
                 App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null in LoadConfigurableTexts. UI texts might use fallbacks.");
-
-                // Set hardcoded fallbacks directly if settings aren't loaded, though this path should ideally not be hit often
-                // if App.OnLaunched correctly populates App.CurrentSettings.
-                InstructionText.Text = string.Format("We are going to take {0} pictures, get ready!", TOTAL_PHOTOS_TO_TAKE); // Fallback
-                if (this.FindName("AcceptButtonLabel") is TextBlock acceptLabel) acceptLabel.Text = "OK"; // Fallback
-                if (this.FindName("RetakeButtonLabel") is TextBlock retakeLabel) retakeLabel.Text = "Retake"; // Fallback
                 return;
             }
 
@@ -151,10 +146,13 @@ namespace WinUI3App
             {
                 retLabel.Text = App.CurrentSettings.UiButtonRetakeText ?? "Retake";
             }
-
             if (this.FindName("QrCodeInstructionText") is TextBlock qrInstruction)
             {
                 qrInstruction.Text = App.CurrentSettings.UiQrInstruction;
+            }
+            if (this.FindName("CloseQrButtonLabel") is TextBlock qrCloseButtonLabel)
+            {
+                qrCloseButtonLabel.Text = App.CurrentSettings.UiQrCloseButton;
             }
         }
 
