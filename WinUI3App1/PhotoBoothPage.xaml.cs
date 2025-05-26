@@ -736,6 +736,25 @@ namespace WinUI3App
             {
                 App.Logger?.Information("PhotoBoothPage: Uploading is disabled. Skipping upload step.");
             }
+                
+            // Show the overlay with a printing instruction text if printing is enabled
+            if (App.CurrentSettings?.EnablePrinting ?? false)
+            {
+                TimeSpan printedTimeDifference = (DateTime.Now - App.lastPrintTime);
+                // Retrieve texts
+                if ((App.lastPrintTime == null) || (printedTimeDifference > new TimeSpan(0, 10, 0)))
+                {
+                    PrintInstructionText.Text = App.CurrentSettings?.UiPrintingWarmingUpMessage ?? "Printer is warming up, this can take a short while...";
+                }
+                else
+                {
+                    PrintInstructionText.Text = App.CurrentSettings?.UiPrintingWarmingUpMessage ?? "Printing your picture...";
+                }
+
+                OverlayText.Visibility = Visibility.Visible;
+                PrintInstructionText.Visibility = Visibility.Visible;
+
+            }
 
             // if uploading and QR code showing is enabled
             if ((App.CurrentSettings?.EnableShowQr ?? false) && (App.CurrentSettings?.EnableUploading ?? false))

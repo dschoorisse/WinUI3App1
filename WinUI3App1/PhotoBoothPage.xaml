@@ -96,9 +96,10 @@
                 </Button>
             </StackPanel>
 
-            <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#E6000000" Visibility="Collapsed">
+            <Grid x:Name="OverlayGrid" Grid.RowSpan="4" Background="#E6000000" Visibility="Collapsed">
                 <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -111,14 +112,20 @@
                                Foreground="White" 
                                TextAlignment="Center" HorizontalAlignment="Center" 
                                Margin="0,0,0,20"/>
+                    
+                    <TextBlock Grid.Row="1" x:Name="PrintInstructionText" 
+                               Text="Your photo is being printed.." 
+                               FontSize="24" Foreground="White" TextWrapping="Wrap" 
+                               TextAlignment="Center" HorizontalAlignment="Center" 
+                               Visibility="Collapsed" MaxWidth="600" Margin="0,0,0,20"/>
 
-                    <TextBlock Grid.Row="1" x:Name="QrCodeInstructionText" 
-                               Text="Scan de code om je fotostrip te bekijken!" 
+                    <TextBlock Grid.Row="2" x:Name="QrCodeInstructionText" 
+                               Text="Scan the QR code to dowlnoad it!" 
                                FontSize="24" Foreground="White" TextWrapping="Wrap" 
                                TextAlignment="Center" HorizontalAlignment="Center" 
                                Visibility="Collapsed" MaxWidth="600" Margin="0,0,0,20"/>
                     
-                    <Border Grid.Row="2" x:Name="QrCodeBorder" 
+                    <Border Grid.Row="3" x:Name="QrCodeBorder" 
                             Background="White" Padding="20" CornerRadius="8" 
                             Visibility="Collapsed" 
                             HorizontalAlignment="Center" 
@@ -126,7 +133,7 @@
                         <Image x:Name="QrCodeImage" Width="400" Height="400" Stretch="Uniform"/>
                     </Border>
 
-                    <Button Grid.Row="3" x:Name="CloseQrButton"
+                    <Button Grid.Row="4" x:Name="CloseQrButton"
                             Click="CloseQrButton_Click"
                             Width="240" Height="160"
                             Background="White" Foreground="Black" CornerRadius="16"

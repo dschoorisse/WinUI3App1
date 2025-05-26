@@ -42,9 +42,10 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         public string UiDoneMessage { get; set; } = "Done!";
         public string UiQrInstruction { get; set; } = "Scan the code to view you photo strip!";
         public string UiQrCloseButton { get; set; } = "OK";
-        
         public string UiUploadError { get; set; } = "Error while uploading!";
         public string UiQrError { get; set; } = "Cannot create QR code!";
+        public string UiPrintingMessage{ get; set; } = "Printing your photo...";
+        public string UiPrintingWarmingUpMessage{ get; set; } = "The printer needs to warm up, this can take a short while...";
         public bool HorizontalReviewLayout { get; set; } = true;
 
         // Texts for the Accept/Retake buttons on PhotoBoothPage's review screen

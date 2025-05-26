@@ -53,6 +53,7 @@ namespace WinUI3App1
         public static PrinterStatusEventArgs LastKnownPrinterStatus { get; private set; }  // Om de laatste status vast te houden
         private static System.Diagnostics.Stopwatch _printingFinishedStopwatch = new System.Diagnostics.Stopwatch(); // Moet static zijn als methode static is
         private static string _previousPrinterStatusForLight; // Moet static zijn
+        public static DateTime lastPrintTime;
 
         // Printer light control
         private static System.Diagnostics.Stopwatch _lightStandbyDelayStopwatch = new System.Diagnostics.Stopwatch();

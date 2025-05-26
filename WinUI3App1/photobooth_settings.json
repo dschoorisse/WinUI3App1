@@ -46,6 +46,8 @@
     "UiQrInstruction": "Scan the code to view you photo strip!",
     "UiUploadError": "Fout bij het uploaden!",
     "UiQrError": "Kan geen QR-code genereren!",
+    "UiPrintingWarmingUpMessage": "De printer moet opwarmen, dit kan even duren...",
+    "UiPrintingMessage": "Je foto wordt geprint...",
     "UiQrCloseButton": "Klaar",
     "UiButtonAcceptText": "OK",
     "UiButtonRetakeText": "Opnieuw",

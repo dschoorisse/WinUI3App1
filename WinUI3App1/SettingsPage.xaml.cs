@@ -153,6 +153,7 @@ namespace WinUI3App1
             _originalValues["ExternalDmxMinimum"] = LoadedSettingsModel.ExternalDmxMinimum;
             _originalValues["ExternalDmxMaximum"] = LoadedSettingsModel.ExternalDmxMaximum;
             _originalValues["DmxStartAddress"] = LoadedSettingsModel.DmxStartAddress;
+            //TODO; are the printer texts and warming up text necesssary here?
 
             // Sla ook waarden op voor de direct aan LoadedSettingsModel gebonden velden
             _originalValues["UiMainPageTitleText"] = LoadedSettingsModel.UiMainPageTitleText;
