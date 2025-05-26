@@ -97,7 +97,7 @@ namespace WinUI3App1
             }
 
             // 2. Initialize PhotoboothIdentifier from loaded settings (needed for log topic)
-            PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+            PhotoboothIdentifier = CurrentSettings.General.PhotoboothId;
             if (string.IsNullOrWhiteSpace(PhotoboothIdentifier) ||
                 PhotoboothIdentifier.Contains("/") || PhotoboothIdentifier.Contains("+") || PhotoboothIdentifier.Contains("#"))
             {
@@ -105,7 +105,7 @@ namespace WinUI3App1
                 PhotoboothIdentifier = $"Photobooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
                 // Cannot use App.Logger here yet as it's not initialized. Use Debug.WriteLine or queue log.
                 System.Diagnostics.Debug.WriteLine($"WARN: Invalid PhotoboothId ('{oldId}') in settings, using default: {PhotoboothIdentifier}");
-                CurrentSettings.PhotoboothId = PhotoboothIdentifier;
+                CurrentSettings.General.PhotoboothId = PhotoboothIdentifier;
                 await SettingsManager.SaveSettingsAsync(CurrentSettings); // Save corrected ID
             }
 
@@ -119,10 +119,10 @@ namespace WinUI3App1
 
 
             // 4. Initialize MQTT Service (for commands, status, etc.)
-            string mqttBroker = CurrentSettings.MqttBrokerAddress;
-            int mqttPort = CurrentSettings.MqttBrokerPort;
-            string mqttUser = CurrentSettings.MqttUsername;
-            string mqttPassword = CurrentSettings.MqttPassword;
+            string mqttBroker = CurrentSettings.Mqtt.MqttBrokerAddress;
+            int mqttPort = CurrentSettings.Mqtt.MqttBrokerPort;
+            string mqttUser = CurrentSettings.Mqtt.MqttUsername;
+            string mqttPassword = CurrentSettings.Mqtt.MqttPassword;
             try
             {
                 if (!string.IsNullOrEmpty(mqttBroker) && mqttPort > 0)
@@ -347,17 +347,17 @@ namespace WinUI3App1
                 DnpStatusMonitor.PrinterStatusUpdated += OnPrinterStatusUpdated; // Abonneer op het event
 
                 // Start monitoring only if a DNP status file path is actually configured
-                if (!string.IsNullOrEmpty(CurrentSettings.DnpPrinterStatusFilePath))
+                if (!string.IsNullOrEmpty(CurrentSettings.Printer.DnpPrinterStatusFilePath))
                 {
                     DnpStatusMonitor.StartMonitoring();
-                    Logger?.Information("App: DNP Status Monitoring service started for file: {FilePath}", CurrentSettings.DnpPrinterStatusFilePath);
+                    Logger?.Information("App: DNP Status Monitoring service started for file: {FilePath}", CurrentSettings.Printer.DnpPrinterStatusFilePath);
                 }
                 else
                 {
                     Logger?.Warning("App: DNP Printer Status File Path is not configured in settings. DNP Status Monitoring will not start automatically.");
                 }
                 // Set initial status based on what DnpStatusService constructor might have set
-                LastKnownPrinterStatus = DnpStatusMonitor.CurrentPrinterStatus ?? new PrinterStatusEventArgs(status: "Initializing", isJsonAccessible: !string.IsNullOrEmpty(CurrentSettings.DnpPrinterStatusFilePath));
+                LastKnownPrinterStatus = DnpStatusMonitor.CurrentPrinterStatus ?? new PrinterStatusEventArgs(status: "Initializing", isJsonAccessible: !string.IsNullOrEmpty(CurrentSettings.Printer.DnpPrinterStatusFilePath));
 
             }
             catch (Exception ex)
@@ -484,7 +484,7 @@ namespace WinUI3App1
             string currentPrinterStatus = currentStatusArgs.Status;
             bool isPrinterConnected = currentStatusArgs.IsPrinterLikelyConnected;
 
-            if (!isPrinterConnected && App.CurrentSettings?.EnablePrinting == true)
+            if (!isPrinterConnected && App.CurrentSettings?.Functionality.EnablePrinting == true)
             {
                 Logger?.Warning("ControlPrinterLight: Printer not connected (printing enabled). Light to STANDBY/ERROR.");
                 newDesiredLightState = LIGHT_CMD_STANDBY; // Or a specific "ERROR_NO_PRINTER" command
@@ -501,7 +501,7 @@ namespace WinUI3App1
                 {
                     newDesiredLightState = LIGHT_CMD_FINISHED;
                     // Start the timer to transition from FINISHED to STANDBY
-                    int delaySeconds = App.CurrentSettings?.PrinterIdleLightDelaySeconds ?? 20;
+                    int delaySeconds = App.CurrentSettings?.Printer.PrinterIdleLightDelaySeconds ?? 20;
                     _printerLightFinishedToStandbyTimer.Interval = TimeSpan.FromSeconds(delaySeconds);
                     _printerLightFinishedToStandbyTimer.Start();
                     Logger?.Debug("ControlPrinterLight: Printer finished. Light to FINISHED. Standby timer started for {Delay}s.", delaySeconds);
@@ -770,17 +770,17 @@ namespace WinUI3App1
             // De 'incomingSettings' bevat de waarden zoals ze via MQTT zijn gestuurd.
 
             // 1. Achtergrondafbeelding logica
-            string newLocalBackgroundImagePath = incomingSettings.BackgroundImagePath; // Start met wat binnenkomt
+            string newLocalBackgroundImagePath = incomingSettings.Background.BackgroundImagePath; // Start met wat binnenkomt
             bool requiresSave = false; // Wordt true als we iets wijzigen aan incomingSettings
 
-            if (!string.IsNullOrEmpty(incomingSettings.RemoteBackgroundImageUrl))
+            if (!string.IsNullOrEmpty(incomingSettings.Background.RemoteBackgroundImageUrl))
             {
                 // Er is een RemoteBackgroundImageUrl opgegeven. Probeer te downloaden.
-                App.Logger?.Information("App: RemoteBackgroundImageUrl ('{Url}') is specified. Attempting download.", incomingSettings.RemoteBackgroundImageUrl);
+                App.Logger?.Information("App: RemoteBackgroundImageUrl ('{Url}') is specified. Attempting download.", incomingSettings.Background.RemoteBackgroundImageUrl);
                 string downloadedPath = await DownloadAndSaveImageAsync(
-                    incomingSettings.RemoteBackgroundImageUrl,
-                    incomingSettings.RemoteBackgroundImageHash,
-                    (incomingSettings.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString()) // Filename seed
+                    incomingSettings.Background.RemoteBackgroundImageUrl,
+                    incomingSettings.Background.RemoteBackgroundImageHash,
+                    (incomingSettings.Background.RemoteBackgroundImageHash ?? Guid.NewGuid().ToString()) // Filename seed
                 );
 
                 if (!string.IsNullOrEmpty(downloadedPath))
@@ -788,34 +788,34 @@ namespace WinUI3App1
                     // Download gelukt
                     App.Logger?.Information("App: Background image downloaded successfully to: {Path}", downloadedPath);
                     newLocalBackgroundImagePath = downloadedPath;
-                    incomingSettings.LastSuccessfullyDownloadedImageUrl = incomingSettings.RemoteBackgroundImageUrl; // Houd deze vast voor eventuele latere vergelijking
-                    incomingSettings.LastSuccessfullyDownloadedImageHash = incomingSettings.RemoteBackgroundImageHash; // Houd deze vast
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageUrl = incomingSettings.Background.RemoteBackgroundImageUrl; // Houd deze vast voor eventuele latere vergelijking
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageHash = incomingSettings.Background.RemoteBackgroundImageHash; // Houd deze vast
 
                     // WIS RemoteBackgroundImageUrl en RemoteBackgroundImageHash NU ze succesvol verwerkt zijn.
                     App.Logger?.Information("App: Clearing RemoteBackgroundImageUrl and RemoteBackgroundImageHash from settings object as download was successful and path is now local.");
-                    incomingSettings.RemoteBackgroundImageUrl = "";
-                    incomingSettings.RemoteBackgroundImageHash = "";
+                    incomingSettings.Background.RemoteBackgroundImageUrl = "";
+                    incomingSettings.Background.RemoteBackgroundImageHash = "";
                     // De requiresSave wordt hieronder al getriggerd door de wijziging in BackgroundImagePath
                 }
                 else
                 {
                     // Download mislukt
-                    App.Logger?.Warning("App: Failed to download background image from '{Url}'. The existing local BackgroundImagePath (if any was provided in MQTT message) will be cleared, or previous local path (if any) will be lost.", incomingSettings.RemoteBackgroundImageUrl);
+                    App.Logger?.Warning("App: Failed to download background image from '{Url}'. The existing local BackgroundImagePath (if any was provided in MQTT message) will be cleared, or previous local path (if any) will be lost.", incomingSettings.Background.RemoteBackgroundImageUrl);
                     // Volgens jouw wens: als download mislukt, mag het lokale pad niet leeg zijn,
                     // maar de JSON/MQTT moet wel het *resultaat* van de poging reflecteren.
                     // Als download mislukt, dan is er geen *nieuw* lokaal pad.
                     // Als er in `incomingSettings` een `BackgroundImagePath` was meegegeven samen met de `RemoteBackgroundImageUrl`,
                     // dan wordt die `BackgroundImagePath` nu effectief genegeerd omdat de remote download prioriteit had en mislukte.
                     newLocalBackgroundImagePath = ""; // Geen geldig nieuw lokaal pad
-                    incomingSettings.LastSuccessfullyDownloadedImageUrl = ""; // Mislukte download
-                    incomingSettings.LastSuccessfullyDownloadedImageHash = "";
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageUrl = ""; // Mislukte download
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageHash = "";
 
                     // TODO: maybe create a MQTT topic to publish responses to commands?
                 }
                 // Update BackgroundImagePath in het object dat we gaan opslaan
-                if (incomingSettings.BackgroundImagePath != newLocalBackgroundImagePath)
+                if (incomingSettings.Background.BackgroundImagePath != newLocalBackgroundImagePath)
                 {
-                    incomingSettings.BackgroundImagePath = newLocalBackgroundImagePath;
+                    incomingSettings.Background.BackgroundImagePath = newLocalBackgroundImagePath;
                     requiresSave = true; // Markeer dat er een wijziging is die opslag vereist
                 }
 
@@ -823,7 +823,7 @@ namespace WinUI3App1
                 // Dit gebeurt impliciet als ze onderdeel zijn van het 'incomingSettings' object dat vergeleken wordt
                 // of expliciet als we de 'requiresSave' vlag hier zetten.
                 // Omdat we incomingSettings direct aanpassen, zal de SaveSettingsAsync de gewijzigde (gewiste) URLs opslaan.
-                if (string.IsNullOrEmpty(incomingSettings.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageUrl))
+                if (string.IsNullOrEmpty(incomingSettings.Background.RemoteBackgroundImageUrl) && !string.IsNullOrEmpty(incomingSettings.Background.LastSuccessfullyDownloadedImageUrl))
                 {
                     // Dit dekt het geval dat de RemoteBackgroundImageUrl is gewist (omdat download succesvol was)
                     // terwijl LastSuccessfullyDownloadedImageUrl nog wel de oude URL bevatte.
@@ -832,24 +832,24 @@ namespace WinUI3App1
             }
             else // Geen RemoteBackgroundImageUrl opgegeven
             {
-                App.Logger?.Information("App: No RemoteBackgroundImageUrl specified. Using BackgroundImagePath ('{Path}') from incoming settings directly.", incomingSettings.BackgroundImagePath);
-                // Het `incomingSettings.BackgroundImagePath` (dat je via MQTT stuurde) blijft behouden.
+                App.Logger?.Information("App: No RemoteBackgroundImageUrl specified. Using BackgroundImagePath ('{Path}') from incoming settings directly.", incomingSettings.Background.BackgroundImagePath);
+                // Het `incomingSettings.Background.BackgroundImagePath` (dat je via MQTT stuurde) blijft behouden.
                 // We moeten wel zorgen dat 'LastSuccessfullyDownloaded' info wordt gewist als er geen remote URL meer is.
-                if (!string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageUrl))
+                if (!string.IsNullOrEmpty(incomingSettings.Background.LastSuccessfullyDownloadedImageUrl))
                 {
-                    incomingSettings.LastSuccessfullyDownloadedImageUrl = "";
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageUrl = "";
                     requiresSave = true;
                 }
-                if (!string.IsNullOrEmpty(incomingSettings.LastSuccessfullyDownloadedImageHash))
+                if (!string.IsNullOrEmpty(incomingSettings.Background.LastSuccessfullyDownloadedImageHash))
                 {
-                    incomingSettings.LastSuccessfullyDownloadedImageHash = "";
+                    incomingSettings.Background.LastSuccessfullyDownloadedImageHash = "";
                     requiresSave = true;
                 }
-                // `newLocalBackgroundImagePath` is hier al `incomingSettings.BackgroundImagePath`.
-                // Als `incomingSettings.BackgroundImagePath` veranderd is t.o.v. wat er al in `CurrentSettings` stond,
+                // `newLocalBackgroundImagePath` is hier al `incomingSettings.Background.BackgroundImagePath`.
+                // Als `incomingSettings.Background.BackgroundImagePath` veranderd is t.o.v. wat er al in `CurrentSettings` stond,
                 // dan zal dat een `requiresSave` triggeren als we `CurrentSettings` updaten.
-                // De check `incomingSettings.BackgroundImagePath != newLocalBackgroundImagePath` is hierboven al gedaan
-                // of de `incomingSettings.BackgroundImagePath` wordt hier direct gerespecteerd.
+                // De check `incomingSettings.Background.BackgroundImagePath != newLocalBackgroundImagePath` is hierboven al gedaan
+                // of de `incomingSettings.Background.BackgroundImagePath` wordt hier direct gerespecteerd.
             }
 
             // Vergelijk de resulterende 'incomingSettings' met 'CurrentSettings' om te zien of er echt iets is veranderd
@@ -858,18 +858,18 @@ namespace WinUI3App1
             // De `LastModifiedUtc` in `incomingSettings` is leidend.
 
             // Controleer of de PhotoboothId is veranderd en valideer deze.
-            if (string.IsNullOrWhiteSpace(incomingSettings.PhotoboothId) ||
-                incomingSettings.PhotoboothId.Contains("/") || incomingSettings.PhotoboothId.Contains("+") || incomingSettings.PhotoboothId.Contains("#"))
+            if (string.IsNullOrWhiteSpace(incomingSettings.General.PhotoboothId) ||
+                incomingSettings.General.PhotoboothId.Contains("/") || incomingSettings.General.PhotoboothId.Contains("+") || incomingSettings.General.PhotoboothId.Contains("#"))
             {
-                string oldId = incomingSettings.PhotoboothId;
-                incomingSettings.PhotoboothId = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
-                Logger?.Warning("App: Invalid PhotoboothId ('{OldId}') in remote settings, corrected to: {NewId}", oldId, incomingSettings.PhotoboothId);
+                string oldId = incomingSettings.General.PhotoboothId;
+                incomingSettings.General.PhotoboothId = $"PhotoBooth_{Environment.MachineName.Replace(" ", "_").ReplaceNonAlphaNumericChars(string.Empty)}";
+                Logger?.Warning("App: Invalid PhotoboothId ('{OldId}') in remote settings, corrected to: {NewId}", oldId, incomingSettings.General.PhotoboothId);
                 requiresSave = true;
             }
             // Update de globale PhotoboothIdentifier als deze is gewijzigd.
-            if (PhotoboothIdentifier != incomingSettings.PhotoboothId)
+            if (PhotoboothIdentifier != incomingSettings.General.PhotoboothId)
             {
-                PhotoboothIdentifier = incomingSettings.PhotoboothId;
+                PhotoboothIdentifier = incomingSettings.General.PhotoboothId;
                 // TODO: Overweeg MQTT client opnieuw te verbinden als PhotoboothId wijzigt,
                 //       omdat topics ervan afhangen. Voor nu loggen we alleen.
                 Logger?.Warning("App: PhotoboothIdentifier changed to {NewId} due to remote settings. MQTT topics might need re-subscription if service was already connected.", PhotoboothIdentifier);
@@ -896,8 +896,8 @@ namespace WinUI3App1
                     App.Logger?.Debug("App: Now on UI thread. Attempting to refresh active page UI after remote settings update.");
                     // Logica om de UI te verversen (vergelijkbaar met wat je had in OnRemoteSettingsUpdated)
                     // Dit is belangrijk als de pagina al geladen is en moet reageren op de nieuwe settings.
-                    if (oldEffectiveSettings?.BackgroundImagePath != CurrentSettings.BackgroundImagePath ||
-                        oldEffectiveSettings?.UiMainPageTitleText != CurrentSettings.UiMainPageTitleText /* etc. voor andere UI-gebonden settings */)
+                    if (oldEffectiveSettings?.Background.BackgroundImagePath != CurrentSettings.Background.BackgroundImagePath ||
+                        oldEffectiveSettings?.UserInterface.UiMainPageTitleText != CurrentSettings.UserInterface.UiMainPageTitleText /* etc. voor andere UI-gebonden settings */)
                     {
                         await PreloadBackgroundImageAsync(); // Preload opnieuw als pad is gewijzigd
                     }
@@ -1025,10 +1025,10 @@ namespace WinUI3App1
             if (MqttServiceInstance != null && MqttServiceInstance.IsConnected && !string.IsNullOrEmpty(PhotoboothIdentifier))
             {
                 // Use the PhotoboothIdentifier from the settings object being published for consistency in the topic
-                string currentIdForTopic = settingsToPublish.PhotoboothId ?? PhotoboothIdentifier;
+                string currentIdForTopic = settingsToPublish.General.PhotoboothId ?? PhotoboothIdentifier;
                 string topic = $"photobooth/{currentIdForTopic}/settings/current_state";
 
-                Logger?.Information("App: Publishing current settings to MQTT. Topic: {Topic}, Timestamp: {Timestamp}", topic, settingsToPublish.LastModifiedUtc);
+                Logger?.Information("App: Publishing current settings to MQTT. Topic: {Topic}, Timestamp: {Timestamp}", topic, settingsToPublish.General.LastModifiedUtc);
 
                 try
                 {
@@ -1160,7 +1160,7 @@ namespace WinUI3App1
 
                 // Optionally, if PhotoboothIdentifier could change via SettingsPage (unlikely for now), re-validate it here.
                 // string oldId = PhotoboothIdentifier;
-                // PhotoboothIdentifier = CurrentSettings.PhotoboothId;
+                // PhotoboothIdentifier = CurrentSettings.General.PhotoboothId;
                 // ... (validation logic for PhotoboothIdentifier) ...
             }
             else
@@ -1173,25 +1173,25 @@ namespace WinUI3App1
         {
             Logger?.Debug($"Preloading background images");
 
-            if (CurrentSettings == null || string.IsNullOrEmpty(CurrentSettings.BackgroundImagePath))
+            if (CurrentSettings == null || string.IsNullOrEmpty(CurrentSettings.Background.BackgroundImagePath))
             {
                 Logger?.Information("App Preloader: No background image path set in settings, skipping preload.");
                 PreloadedBackgroundImage = null; // Ensure it's null if no path
                 return;
             }
 
-            if (!File.Exists(CurrentSettings.BackgroundImagePath))
+            if (!File.Exists(CurrentSettings.Background.BackgroundImagePath))
             {
-                Logger?.Warning("App Preloader: Background image file not found at {Path}, skipping preload.", CurrentSettings.BackgroundImagePath);
+                Logger?.Warning("App Preloader: Background image file not found at {Path}, skipping preload.", CurrentSettings.Background.BackgroundImagePath);
                 PreloadedBackgroundImage = null;
                 return;
             }
 
             try
             {
-                Logger?.Information("App Preloader: Preloading background image from {Path}", CurrentSettings.BackgroundImagePath);
+                Logger?.Information("App Preloader: Preloading background image from {Path}", CurrentSettings.Background.BackgroundImagePath);
                 BitmapImage bitmap = new BitmapImage();
-                using (FileStream stream = File.OpenRead(CurrentSettings.BackgroundImagePath))
+                using (FileStream stream = File.OpenRead(CurrentSettings.Background.BackgroundImagePath))
                 {
                     // Set DecodePixelWidth/Height here if you want to decode to a specific size during preload
                     // This is useful if your original images are very large.
@@ -1212,7 +1212,7 @@ namespace WinUI3App1
             }
             catch (Exception ex)
             {
-                Logger?.Error(ex, "App Preloader: Failed to preload background image from {Path}", CurrentSettings.BackgroundImagePath);
+                Logger?.Error(ex, "App Preloader: Failed to preload background image from {Path}", CurrentSettings.Background.BackgroundImagePath);
                 PreloadedBackgroundImage = null;
             }
         }

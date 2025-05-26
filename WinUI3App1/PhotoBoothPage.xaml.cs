@@ -102,7 +102,7 @@ namespace WinUI3App
             // Set timer interval based on loaded settings
             if (App.CurrentSettings != null)
             {
-                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(App.CurrentSettings.ReviewPageTimeoutSeconds > 0 ? App.CurrentSettings.ReviewPageTimeoutSeconds : 30); // Use default if setting is invalid
+                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(App.CurrentSettings.Timeouts.ReviewPageTimeoutSeconds > 0 ? App.CurrentSettings.Timeouts.ReviewPageTimeoutSeconds : 30); // Use default if setting is invalid
                 App.Logger?.Debug("PhotoBoothPage: Review page timeout set to {Timeout} seconds.", _reviewPageTimeoutTimer.Interval.TotalSeconds);
             }
             else
@@ -140,19 +140,19 @@ namespace WinUI3App
             // Set button texts (assuming TextBlocks have x:Name="AcceptButtonLabel" and x:Name="RetakeButtonLabel")
             if (this.FindName("AcceptButtonLabel") is TextBlock accLabel)
             {
-                accLabel.Text = App.CurrentSettings.UiButtonAcceptText ?? "OK";
+                accLabel.Text = App.CurrentSettings.UserInterface.UiButtonAcceptText ?? "OK";
             }
             if (this.FindName("RetakeButtonLabel") is TextBlock retLabel)
             {
-                retLabel.Text = App.CurrentSettings.UiButtonRetakeText ?? "Retake";
+                retLabel.Text = App.CurrentSettings.UserInterface.UiButtonRetakeText ?? "Retake";
             }
             if (this.FindName("QrCodeInstructionText") is TextBlock qrInstruction)
             {
-                qrInstruction.Text = App.CurrentSettings.UiQrInstruction;
+                qrInstruction.Text = App.CurrentSettings.UserInterface.UiQrInstruction;
             }
             if (this.FindName("CloseQrButtonLabel") is TextBlock qrCloseButtonLabel)
             {
-                qrCloseButtonLabel.Text = App.CurrentSettings.UiQrCloseButton;
+                qrCloseButtonLabel.Text = App.CurrentSettings.UserInterface.UiQrCloseButton;
             }
         }
 
@@ -185,10 +185,10 @@ namespace WinUI3App
                 App.Logger?.Information("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
 
                 // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
-                // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
+                // but App.CurrentSettings.Background.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
                 // For simplicity, this example assumes if preload failed, we show no background.
                 // If you want a fallback load:
-                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.BackgroundImagePath) && File.Exists(App.CurrentSettings.BackgroundImagePath)) { ... load it now ... }
+                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.Background.BackgroundImagePath) && File.Exists(App.CurrentSettings.Background.BackgroundImagePath)) { ... load it now ... }
             }
             // This method might no longer need to be async if it's just assigning the Source
             // unless you keep the fallback direct load logic. For now, keep as Task for consistency.
@@ -272,7 +272,7 @@ namespace WinUI3App
             // Show instructions to the user
             App.State = App.PhotoBoothState.ShowingInstructions;
 
-            string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
+            string instructionFormat = App.CurrentSettings?.UserInterface.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
             InstructionText.Text = string.Format(instructionFormat, TOTAL_PHOTOS_TO_TAKE);
 
             ProgressIndicatorPanel.Visibility = Visibility.Visible; // Keep dots visible as per last request
@@ -317,10 +317,10 @@ namespace WinUI3App
             TakenPhotoImage.Opacity = 0;
 
             // Use texts from settings, with fallbacks
-            string step3Text = App.CurrentSettings?.UiCountdown3 ?? "3";
-            string step2Text = App.CurrentSettings?.UiCountdown2 ?? "2";
-            string step1Text = App.CurrentSettings?.UiCountdown1 ?? "1";
-            string step0Text = App.CurrentSettings?.UiCountdown0 ?? "📸";
+            string step3Text = App.CurrentSettings?.UserInterface.UiCountdown3 ?? "3";
+            string step2Text = App.CurrentSettings?.UserInterface.UiCountdown2 ?? "2";
+            string step1Text = App.CurrentSettings?.UserInterface.UiCountdown1 ?? "1";
+            string step0Text = App.CurrentSettings?.UserInterface.UiCountdown0 ?? "📸";
 
             string[] countdownSteps = { step3Text, step2Text, step1Text, step0Text };
 
@@ -491,9 +491,9 @@ namespace WinUI3App
             TakenPhotoImage.Opacity = 0;
             ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
 
-            bool useHorizontalLayout = App.CurrentSettings?.HorizontalReviewLayout ?? true; // Default naar horizontaal als setting niet bestaat
+            bool useHorizontalLayout = App.CurrentSettings?.UserInterface.HorizontalReviewLayout ?? true; // Default naar horizontaal als setting niet bestaat
             App.Logger?.Debug("PhotoBoothPage: Review layout will be {Layout}. HorizontalReviewLayout setting is {SettingValue}",
-                useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.HorizontalReviewLayout);
+                useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.UserInterface.HorizontalReviewLayout);
 
             // Bepaal welke galerij en welke image controls te gebruiken
             Viewbox activeGalleryContainer;
@@ -590,7 +590,7 @@ namespace WinUI3App
 
             OverlayGrid.Opacity = 0; // Start fully transparent
             OverlayGrid.Visibility = Visibility.Visible; // Make it visible but transparent
-            OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving...";
+            OverlayText.Text = App.CurrentSettings?.UserInterface.UiSavingMessage ?? "Saving...";
 
             // Create and start the fade-in animation
             var fadeInAnimation = new DoubleAnimation
@@ -658,7 +658,7 @@ namespace WinUI3App
 
             #region S3 upload
             // If the merge was successful, upload to S3 and get the public URL
-            if (App.CurrentSettings.EnableUploading)
+            if (App.CurrentSettings.Functionality.EnableUploading)
             {
                 App.Logger?.Information("PhotoBoothPage: Uploading is enabled. Proceeding with upload.");
 
@@ -669,7 +669,7 @@ namespace WinUI3App
                     // ---- UPLOAD TO S3/MINIO ----
                     if (_s3Service != null)
                     {
-                        OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Uploading...";
+                        OverlayText.Text = App.CurrentSettings?.UserInterface.UiUploadingMessage ?? "Uploading...";
                         App.State = App.PhotoBoothState.Uploading;
                         string prefix = $"{DateTime.UtcNow:yyyyMMdd}";
                         string objectKeyStrip = $"strips/{prefix}/{uniqueFileId}.{Path.GetExtension(finalPhotoStripPathOnDisk)}";
@@ -685,7 +685,7 @@ namespace WinUI3App
                         else
                         {
                             App.Logger?.Error($"PhotoBoothPage: Failed to upload photostrip to S3/MinIO. The publicUrlForQrCode received from S3 service: {publicUrlForQrCode}");
-                            OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                            OverlayText.Text = App.CurrentSettings?.UserInterface.UiUploadError ?? "Upload failed!";
                         }
 
                         // Upload individual pictures (single shots) async, do not wait for QR
@@ -720,7 +720,7 @@ namespace WinUI3App
                     else
                     {
                         App.Logger?.Error("PhotoBoothPage: S3Service is not initialized. Cannot upload files.");
-                        OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                        OverlayText.Text = App.CurrentSettings?.UserInterface.UiUploadError ?? "Upload failed!";
                         await Task.Delay(2_000);
                     }
                     // ---- EINDE UPLOAD ----
@@ -728,7 +728,7 @@ namespace WinUI3App
                 else
                 {
                     App.Logger?.Error($"PhotoBoothPage: Processing failed while uploading. Path in finalPhotoStripPathOnDisk is empty. Skipping upload.");
-                    OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                    OverlayText.Text = App.CurrentSettings?.UserInterface.UiUploadError ?? "Upload failed!";
                     await Task.Delay(2_000); // Wacht even zodat gebruiker de (upload) status kan zien
                 }
             }
@@ -738,7 +738,7 @@ namespace WinUI3App
             }
 
             // if uploading and QR code showing is enabled
-            if ((App.CurrentSettings?.EnableShowQr ?? false) && (App.CurrentSettings?.EnableUploading ?? false))
+            if ((App.CurrentSettings?.Functionality.EnableShowQr ?? false) && (App.CurrentSettings?.Functionality.EnableUploading ?? false))
             {
                 App.Logger?.Debug("PhotoBoothPage: QR code showing after upload is enabled.");
 
@@ -755,7 +755,7 @@ namespace WinUI3App
                     App.Logger?.Information($"PhotoBoothPage: Showing QR Code with link to {publicUrlForQrCode}");
 
                     // Start QR Code timeout timer
-                    int qrTimeoutSeconds = App.CurrentSettings.QrCodeTimeoutSeconds > 0 ? App.CurrentSettings.QrCodeTimeoutSeconds : 30;
+                    int qrTimeoutSeconds = App.CurrentSettings.Timeouts.QrCodeTimeoutSeconds > 0 ? App.CurrentSettings.Timeouts.QrCodeTimeoutSeconds : 30;
                     _qrPageTimeoutTimer.Interval = TimeSpan.FromSeconds(qrTimeoutSeconds);
                     _qrPageTimeoutTimer.Start();
                     App.Logger?.Information($"PhotoBoothPage: QR code display timeout set to {qrTimeoutSeconds} seconds.");
@@ -764,7 +764,7 @@ namespace WinUI3App
                 else
                 {
                     App.Logger?.Error("PhotoBoothPage: Failed to generate QR code image.");
-                    OverlayText.Text = App.CurrentSettings?.UiQrError ?? "Cannot create QR code!";
+                    OverlayText.Text = App.CurrentSettings?.UserInterface.UiQrError ?? "Cannot create QR code!";
                     OverlayText.Visibility = Visibility.Visible;
                 }
 
@@ -775,7 +775,7 @@ namespace WinUI3App
             }          
             #endregion
 
-            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
+            OverlayText.Text = App.CurrentSettings?.UserInterface.UiDoneMessage ?? "Done!";
             await Task.Delay(1500); // Original delay, this show the 'Done!' message on the screen
 
             // If no error occurred, proceed to the next step
@@ -1001,7 +1001,7 @@ namespace WinUI3App
 
             #region Retrieve composition settings
             // Haal de compositie-instellingen op
-            var compositionSettings = App.CurrentSettings?.PhotoStripComposition;
+            var compositionSettings = App.CurrentSettings?.PhotoStripComposition; // This remains as is, not moved to a sub-class
             if (compositionSettings == null)
             {
                 App.Logger?.Error("ImageProcessing: PhotoStripComposition settings are missing. Aborting.");
@@ -1016,7 +1016,7 @@ namespace WinUI3App
             string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
             // Get output folder path from settings or use default
-            string outputBaseFolderPath = App.CurrentSettings?.PhotoOutputPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "PhotoBoothOutput");
+            string outputBaseFolderPath = App.CurrentSettings?.Output.PhotoOutputPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "PhotoBoothOutput");
 
             // Create the output folder if it doesn't exist
             Directory.CreateDirectory(outputBaseFolderPath);
@@ -1153,9 +1153,9 @@ namespace WinUI3App
                     App.Logger?.Information("ImageProcessing: Final composite photo strip saved to: {OutputPath}", finalOutputPath);
 
                     // If printing is enabled and a hot folder path is set, copy the final output to the hot folder
-                    if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    if (App.CurrentSettings.Functionality.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.Printer.HotFolderPath))
                     {
-                        string hotFolderPathString = App.CurrentSettings.HotFolderPath;
+                        string hotFolderPathString = App.CurrentSettings.Printer.HotFolderPath;
                         try
                         {
                             if (Directory.Exists(hotFolderPathString))
@@ -1183,11 +1183,11 @@ namespace WinUI3App
                             App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
                         }
                     }
-                    else if (!App.CurrentSettings.EnablePrinting)
+                    else if (!App.CurrentSettings.Functionality.EnablePrinting)
                     {
                         App.Logger?.Information("ImageProcessing: Printing is disabled, not copying to hot folder.");
                     }
-                    else if (string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    else if (string.IsNullOrEmpty(App.CurrentSettings.Printer.HotFolderPath))
                     {
                         App.Logger?.Warning("ImageProcessing: Copy to HotFolder is enabled, but path is empty. Cannot copy to HotFolder.");
                     }

@@ -61,7 +61,7 @@ namespace WinUI3App
 
             // Check if lastest settings are loadeds
             if ((App.lastPreloadBackgroundUtc == DateTime.MinValue ) || 
-                (App.CurrentSettings.LastModifiedUtc > App.lastPreloadBackgroundUtc))
+                (App.CurrentSettings.General.LastModifiedUtc > App.lastPreloadBackgroundUtc))
             {
                 App.Logger?.Information("MainPage: Newer settings detected than loaded before. Will reload some settings!");
 
@@ -103,7 +103,7 @@ namespace WinUI3App
                 App.Logger?.Warning("MainPage: RootContentGrid not found for fade-in animation.");
             }
 
-            App.lastPreloadBackgroundUtc = App.CurrentSettings.LastModifiedUtc;
+            App.lastPreloadBackgroundUtc = App.CurrentSettings.General.LastModifiedUtc;
 
             // Set final state after loading and initial animations
             App.State = App.PhotoBoothState.Idle;
@@ -119,14 +119,14 @@ namespace WinUI3App
 
             if (App.CurrentSettings != null)
             {
-                TakePhotoButton.IsEnabled = App.CurrentSettings.EnablePhotos;
-                TakePhotoButton.Visibility = App.CurrentSettings.EnablePhotos ? Visibility.Visible : Visibility.Collapsed;
+                TakePhotoButton.IsEnabled = App.CurrentSettings.Functionality.EnablePhotos;
+                TakePhotoButton.Visibility = App.CurrentSettings.Functionality.EnablePhotos ? Visibility.Visible : Visibility.Collapsed;
 
-                RecordVideoButton.IsEnabled = App.CurrentSettings.EnableVideos;
-                RecordVideoButton.Visibility = App.CurrentSettings.EnableVideos ? Visibility.Visible : Visibility.Collapsed;
+                RecordVideoButton.IsEnabled = App.CurrentSettings.Functionality.EnableVideos;
+                RecordVideoButton.Visibility = App.CurrentSettings.Functionality.EnableVideos ? Visibility.Visible : Visibility.Collapsed;
 
                 App.Logger?.Debug("MainPage: Buttons configured based on settings. Photos: {0}, Videos: {1}",
-                    App.CurrentSettings.EnablePhotos, App.CurrentSettings.EnableVideos);
+                    App.CurrentSettings.Functionality.EnablePhotos, App.CurrentSettings.Functionality.EnableVideos);
             }
             else
             {
@@ -192,32 +192,32 @@ namespace WinUI3App
             // Load Title Text (assuming TextBlock x:Name="TitleTextBlock" in your XAML)
             if (this.FindName("TitleTextBlock") is TextBlock titleTextBlock)
             {
-                titleTextBlock.Text = App.CurrentSettings.UiMainPageTitleText ?? "Welcome!"; // Fallback
+                titleTextBlock.Text = App.CurrentSettings.UserInterface.UiMainPageTitleText ?? "Welcome!"; // Fallback
             }
 
             // Load Subtitle Text (assuming TextBlock x:Name="SubtitleTextBlock" in your XAML)
             if (this.FindName("SubtitleTextBlock") is TextBlock subtitleTextBlock)
             {
-                subtitleTextBlock.Text = App.CurrentSettings.UiMainPageSubtitleText ?? "Capture your perfect moment."; // Fallback
+                subtitleTextBlock.Text = App.CurrentSettings.UserInterface.UiMainPageSubtitleText ?? "Capture your perfect moment."; // Fallback
             }
 
             // Load Button Texts (as implemented in the previous step)
             if (this.FindName("TakePhotoButtonLabel") is TextBlock photoButtonLabel)
             {
-                photoButtonLabel.Text = App.CurrentSettings.UiMainPagePhotoButtonText ?? "Take Photo";
+                photoButtonLabel.Text = App.CurrentSettings.UserInterface.UiMainPagePhotoButtonText ?? "Take Photo";
             }
             else if (this.FindName("TakePhotoButton") is Button photoButton && photoButton.Content is string)
             {
-                photoButton.Content = App.CurrentSettings.UiMainPagePhotoButtonText ?? "Take Photo";
+                photoButton.Content = App.CurrentSettings.UserInterface.UiMainPagePhotoButtonText ?? "Take Photo";
             }
 
             if (this.FindName("RecordVideoButtonLabel") is TextBlock videoButtonLabel)
             {
-                videoButtonLabel.Text = App.CurrentSettings.UiMainPageVideoButtonText ?? "Record Video";
+                videoButtonLabel.Text = App.CurrentSettings.UserInterface.UiMainPageVideoButtonText ?? "Record Video";
             }
             else if (this.FindName("RecordVideoButton") is Button videoButton && videoButton.Content is string)
             {
-                videoButton.Content = App.CurrentSettings.UiMainPageVideoButtonText ?? "Record Video";
+                videoButton.Content = App.CurrentSettings.UserInterface.UiMainPageVideoButtonText ?? "Record Video";
             }
         }
 
@@ -249,10 +249,10 @@ namespace WinUI3App
                 App.Logger?.Warning("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
 
                 // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
-                // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
+                // but App.CurrentSettings.Background.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
                 // For simplicity, this example assumes if preload failed, we show no background.
                 // If you want a fallback load:
-                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.BackgroundImagePath) && File.Exists(App.CurrentSettings.BackgroundImagePath)) { ... load it now ... }
+                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.Background.BackgroundImagePath) && File.Exists(App.CurrentSettings.Background.BackgroundImagePath)) { ... load it now ... }
             }
             // This method might no longer need to be async if it's just assigning the Source
             // unless you keep the fallback direct load logic. For now, keep as Task for consistency.

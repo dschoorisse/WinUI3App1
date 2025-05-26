@@ -109,7 +109,7 @@ namespace WinUI3App // Your main application namespace
         public DnpStatusService(PhotoBoothSettings settings, ILogger logger, DispatcherQueue dispatcherQueue)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _statusFilePath = settings?.DnpPrinterStatusFilePath;
+            _statusFilePath = settings?.Printer.DnpPrinterStatusFilePath;
 
             if (string.IsNullOrEmpty(_statusFilePath))
             {
@@ -216,7 +216,7 @@ namespace WinUI3App // Your main application namespace
                     // Check if HotFolder utility is active (based on its own timestamp)
                     if (newStatus.JsonFileTimestamp.HasValue)
                     {
-                        newStatus.IsHotFolderUtilityActive = (DateTimeOffset.Now - newStatus.JsonFileTimestamp.Value) < TimeSpan.FromMinutes(App.CurrentSettings?.DnpStatusFileMaxAgeMinutes ?? 5); //
+                        newStatus.IsHotFolderUtilityActive = (DateTimeOffset.Now - newStatus.JsonFileTimestamp.Value) < TimeSpan.FromMinutes(App.CurrentSettings?.Printer.DnpStatusFileMaxAgeMinutes ?? 5); //
                     }
                     else
                     {
