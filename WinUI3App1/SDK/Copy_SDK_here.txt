@@ -1,0 +1,23 @@
+Copy your copy of the Canon EDSDK license here. 
+Due to license restrictions I have not included the SDK here. 
+
+In this directory, copy the EDSDK and EDSDK_64 directories and their whole contents. 
+
+EDSDK
+ - Dll
+   - EDSDK.dll
+   - EdsImage.dll
+ - Header
+    - EDSDK.h
+    - EDSDKErrors.h
+    - EDSDKTypes.h
+ - Library
+    - EDSDK.lib
+
+EDSDK_64
+ - Dll
+   - EDSDK.dll
+   - EdsImage.dll
+ - Library
+    - EDSDK.lib
+
