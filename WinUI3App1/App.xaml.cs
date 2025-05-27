@@ -19,6 +19,10 @@ using System.Text.Json.Serialization;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Dispatching;
 
+using Canon.Sdk.Core;
+using Canon.Sdk.Events;
+using Canon.Sdk.Exceptions;
+
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
 {
@@ -64,6 +68,14 @@ namespace WinUI3App1
         private const string LIGHT_CMD_STANDBY = "STANDBY";
         private const string LIGHT_CMD_PRINTING = "PRINTING";
         private const string LIGHT_CMD_FINISHED = "FINISHED";
+
+        // Canon EDSDK 
+        static CanonAPI canonApi;
+        static bool running = true;
+        static Camera currentCamera;
+        static object cameraLock = new object(); // For thread safety if OnCameraAdded is used
+        static bool isCameraConnectedAndInitialized = false; // To prevent re-entry issues
+
 
         public App()
         {
@@ -274,6 +286,12 @@ namespace WinUI3App1
                 Logger.Error(ex, "Failed to initialize or start the heartbeat timer.");
             }
 
+            #endregion
+
+            #region Canon SDK
+            Console.WriteLine("Initializing Canon SDK...");
+            canonApi = new CanonAPI();
+            canonApi.Initialize();
             #endregion
         }
 

@@ -27,6 +27,10 @@
     <None Remove="EdsImage.dll" />
     <None Remove="Mlib.dll" />
     <None Remove="PhotoBoothPage.xaml" />
+    <None Remove="SDK\EDSDK\Dll\EDSDK.dll" />
+    <None Remove="SDK\EDSDK\Dll\EdsImage.dll" />
+    <None Remove="SDK\EDSDK_64\Dll\EDSDK.dll" />
+    <None Remove="SDK\EDSDK_64\Dll\EdsImage.dll" />
     <None Remove="SettingsPage.xaml" />
     <None Remove="Ucs32P.dll" />
   </ItemGroup>
@@ -39,6 +43,18 @@
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <Content Include="SDK\EDSDK\Dll\EDSDK.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="SDK\EDSDK\Dll\EdsImage.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="SDK\EDSDK_64\Dll\EDSDK.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="SDK\EDSDK_64\Dll\EdsImage.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -101,6 +117,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PRIResource Remove="EDSDK\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Canon.Sdk\Canon.Sdk.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Update="Assets\placeholder.jpg">
