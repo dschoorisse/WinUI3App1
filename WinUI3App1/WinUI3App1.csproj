@@ -43,19 +43,30 @@
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
-    <Content Include="SDK\EDSDK\Dll\EDSDK.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="SDK\EDSDK\Dll\EdsImage.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="SDK\EDSDK_64\Dll\EDSDK.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="SDK\EDSDK_64\Dll\EdsImage.dll">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
+
+
+    <ItemGroup Condition=" '$(Platform)' == 'x86' ">
+	    <Content Include="SDK\EDSDK\Dll\EDSDK.dll">
+		    <Link>EDSDK.dll</Link>
+		    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	    </Content>
+	    <Content Include="SDK\EDSDK\Dll\EdsImage.dll">
+		    <Link>EdsImage.dll</Link>
+		    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	    </Content>
+    </ItemGroup>
+
+    <ItemGroup Condition=" '$(Platform)' == 'x64' ">
+        <Content Include="SDK\EDSDK_64\Dll\EDSDK.dll">
+	        <Link>EDSDK.dll</Link>
+	        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+        <Content Include="SDK\EDSDK_64\Dll\EdsImage.dll">
+	        <Link>EdsImage.dll</Link>
+	        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
 
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
