@@ -70,9 +70,9 @@ namespace WinUI3App1
         private const string LIGHT_CMD_FINISHED = "FINISHED";
 
         // Canon EDSDK 
-        static CanonAPI canonApi;
+        public static CanonAPI canonApi;
         static bool running = true;
-        static Camera currentCamera;
+        public static Camera currentCamera;
         static object cameraLock = new object(); // For thread safety if OnCameraAdded is used
         static bool isCameraConnectedAndInitialized = false; // To prevent re-entry issues
 
@@ -289,9 +289,18 @@ namespace WinUI3App1
             #endregion
 
             #region Canon SDK
-            Console.WriteLine("Initializing Canon SDK...");
+            App.Logger?.Debug("Initializing Canon SDK...");
             canonApi = new CanonAPI();
             canonApi.Initialize();
+            App.Logger?.Information("Initialized Canon SDK!");
+
+            // Set the camera on added handler like in console application
+
+            // Do the tests
+            App.Logger?.Warning("Looking for cameras...");
+            CameraList cameraList = canonApi.GetCameraList();
+            App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
+
             #endregion
         }
 

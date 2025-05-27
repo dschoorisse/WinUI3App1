@@ -15,7 +15,8 @@ using Windows.Storage;
 using Microsoft.UI.Xaml.Navigation;
 using System.Threading.Tasks;
 using Windows.UI;
-using Microsoft.UI.Xaml.Media.Animation; // For handling keyboard shortcuts
+using Microsoft.UI.Xaml.Media.Animation;
+using Canon.Sdk.Core; // For handling keyboard shortcuts
 
 namespace WinUI3App
 {
@@ -357,6 +358,17 @@ namespace WinUI3App
 
             // Navigate to photo capture page
             Frame.Navigate(typeof(PhotoBoothPage));
+        }
+
+        private void TestButton_Click(object sender, RoutedEventArgs e)
+        {
+            App.Logger?.Information("MainPage: Test button clicked");
+
+            //// Do the tests
+            //App.Logger?.Warning("Looking for cameras...");
+            //CameraList cameraList = App.canonApi.GetCameraList();
+            //App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
+
         }
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)

@@ -70,6 +70,27 @@
                        TextAlignment="Center"/>
           </StackPanel>
         </Button>
+          
+        <!-- Test Button -->
+        <Button x:Name="TesetButton"
+                Click="TestButton_Click"
+                Width="240"
+                Height="160"
+                Background="White"
+                Foreground="Black"
+                CornerRadius="16">
+          <StackPanel>
+            <FontIcon Glyph="&#xE714;"
+                      FontSize="72"
+                      HorizontalAlignment="Center"/>
+            <TextBlock Text="Test"
+                       x:Name="TestButtonLabel"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Margin="0,16,0,0"
+                       TextAlignment="Center"/>
+          </StackPanel>
+        </Button>
 
         <!-- Record Video Button -->
         <Button x:Name="RecordVideoButton"
