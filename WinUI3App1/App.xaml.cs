@@ -128,7 +128,7 @@ namespace WinUI3App1
             Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
 
             // 4. Preload background image if specified
-            await PreloadBackgroundImageAsync();
+            //await PreloadBackgroundImageAsync();
 
 
             // 4. Initialize MQTT Service (for commands, status, etc.)
@@ -241,7 +241,6 @@ namespace WinUI3App1
 
             // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
             SettingsManager.OnSettingsWrittenToDisk += App_OnSettingsWrittenToDisk_Handler; // Corrected handler name
-
 
             // 9. Set initial light states (LEDs)
             SetInitialPrinterLightState();

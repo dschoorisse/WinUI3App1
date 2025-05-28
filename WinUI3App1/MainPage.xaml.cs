@@ -51,8 +51,7 @@ namespace WinUI3App
             _cornerTouchTimer.Tick += CornerTouchTimer_Tick;
             _cornerTouchTimer.Start();
 
-            // Log application start
-            App.Logger?.Information("Application started");
+            App.Logger?.Verbose("MainPage constructor called");
         }
 
 
