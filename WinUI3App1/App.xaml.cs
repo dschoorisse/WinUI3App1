@@ -237,9 +237,6 @@ namespace WinUI3App1
             // 8. Setup other app-level handlers
             MainWindow.Closed += OnMainWindowClosed;
             this.UnhandledException += App_UnhandledException;
-            Logger.Information("Application initialization complete.");
-
-            this.UnhandledException += App_UnhandledException;
             Logger.Information("Application initialized and launched.");
 
             // Subscribe to the event from SettingsManager, when settings are changed we send the new settings over MQTT
