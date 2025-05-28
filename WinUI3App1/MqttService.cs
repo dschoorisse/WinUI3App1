@@ -447,7 +447,7 @@ namespace WinUI3App1
                         // --------------------------------------------------
 
                         // --- VOER NU PAS DE NETTE DISCONNECT UIT ---
-                        _logger.Information("MQTT: Performing clean disconnect...", _photoboothId);
+                        _logger.Debug("MQTT: Performing clean disconnect...", _photoboothId);
                         var disconnectOptions = _mqttFactory.CreateClientDisconnectOptionsBuilder()
                            .WithReason(MqttClientDisconnectOptionsReason.NormalDisconnection)
                            .Build();
@@ -488,7 +488,7 @@ namespace WinUI3App1
             try { _cancellationTokenSource.Dispose(); } catch (Exception ex) { _logger.Warning(ex, "MQTT: Exception during CancellationTokenSource dispose.", _photoboothId); }
 
 
-            _logger.Information("MQTT: Service disposed.", _photoboothId);
+            _logger.Debug("MQTT: Service disposed.", _photoboothId);
         }
 
         // Standard Dispose pattern implementation

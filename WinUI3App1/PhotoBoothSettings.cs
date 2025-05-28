@@ -100,6 +100,7 @@ namespace WinUI3App1 // Ensure this namespace matches your project
         //public string CameraResolution { get; set; } = "1920x1080"; // Desired camera resolution
         public int MaxVideoDurationSeconds { get; set; } = 180;
         public string LogLevel { get; set; } = "Information"; // For Serilog or other loggers
+        public string SeqApiKey { get; set; } = ""; // API key for Seq logging server
         public List<string> KioskComputerNames { get; set; } = new List<string> { "" }; // Example for local admin access
 
         // Constructor can be used to initialize complex defaults if needed

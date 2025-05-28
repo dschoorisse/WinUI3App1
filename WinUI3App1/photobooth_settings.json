@@ -26,6 +26,7 @@
     "CameraResolution": "1920x1080",
     "MaxVideoDurationSeconds": 15,
     "LogLevel": "Information",
+    "SeqApiKey": "<myApiKey>",
     "EnableRemoteAdminViaMqtt": false,
     "KioskComputerNames": [
         "COMPUTER-NAME-1",

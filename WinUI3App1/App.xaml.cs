@@ -740,9 +740,13 @@ namespace WinUI3App1
 
             // TODO: create a sink that logs to a remote server
             // Maybe HTTP or other system
+            // Get the API  key from the settings JSON
+            var myApiKey = CurrentSettings.SeqApiKey;
+            loggerConfiguration.WriteTo.Seq(serverUrl:"http://seq.devideopaal.nl:5341", apiKey: myApiKey);
 
             Logger = loggerConfiguration.CreateLogger();
             Log.Logger = Logger; // Assign to Serilog's global static logger
+            Logger.Debug("Logging configured. Logs will be written to: {LogsDirectory}", logsDirectory);
         }
 
         private async void OnMainWindowClosed(object sender, WindowEventArgs args)
@@ -758,7 +762,7 @@ namespace WinUI3App1
                     // (or use Dispose(WaitHandle) for more control if needed, but simple Dispose is usually fine).
                     _heartbeatTimerMqtt.Dispose();
                     _heartbeatTimerMqtt = null; // Nullify to prevent reuse
-                    Logger.Information("Heartbeat timer disposed successfully.");
+                    Logger.Debug("Heartbeat timer disposed successfully.");
                 }
                 catch (Exception ex)
                 {
@@ -778,7 +782,6 @@ namespace WinUI3App1
             // --- End of MQTT Service Disposal ---
 
             // --- Stop DNP Status Monitoring ---
-            DnpStatusMonitor?.StopMonitoring();
             DnpStatusMonitor?.Dispose();
             Logger?.Debug("DnpStatusService disposed on window close.");
             // --- End of DNP Status Monitoring Disposal ---
