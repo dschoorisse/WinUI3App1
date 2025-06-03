@@ -148,6 +148,23 @@
           VerticalAlignment="Bottom"
           Tapped="BottomRightCorner_Tapped"
           Canvas.ZIndex="1"/>
+        
+    <TextBox x:Name="DebugTextBox"
+        Visibility="Collapsed"
+        IsReadOnly="True"
+        AcceptsReturn="True"
+        TextWrapping="Wrap"
+        ScrollViewer.VerticalScrollBarVisibility="Auto"
+        HorizontalAlignment="Stretch"
+        VerticalAlignment="Stretch"
+        Margin="20"
+        MinHeight="100"
+        MaxHeight="300"
+        Background="#A0000000"
+        Foreground="White"
+        BorderBrush="Gray"
+        BorderThickness="1"
+        Canvas.ZIndex="99"/>
 
   </Grid>
 </Page>

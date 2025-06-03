@@ -16,7 +16,10 @@ using Microsoft.UI.Xaml.Navigation;
 using System.Threading.Tasks;
 using Windows.UI;
 using Microsoft.UI.Xaml.Media.Animation;
-using Canon.Sdk.Core; // For handling keyboard shortcuts
+using Canon.Sdk.Core;
+using Canon.Sdk.Exceptions;
+using System.Threading;
+using EDSDKLib; // For handling keyboard shortcuts
 
 namespace WinUI3App
 {
@@ -40,6 +43,7 @@ namespace WinUI3App
         // Settings managment
 
         private ImageBrush backgroundBrush;
+        private bool running;
 
         public MainPage()
         {
@@ -57,13 +61,13 @@ namespace WinUI3App
 
         private async void Page_Loaded(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("MainPage: Page Loaded.");
+            App.Logger?.Debug("MainPage: Page Loaded.");
 
             // Check if lastest settings are loadeds
             if ((App.lastPreloadBackgroundUtc == DateTime.MinValue ) || 
                 (App.CurrentSettings.LastModifiedUtc > App.lastPreloadBackgroundUtc))
             {
-                App.Logger?.Information("MainPage: Newer settings detected than loaded before. Will reload some settings!");
+                App.Logger?.Debug("MainPage: Newer settings detected than loaded before. Will reload some settings!");
 
                 // Load dynamic texts and background image now that elements are ready
                 await App.PreloadBackgroundImageAsync();
@@ -353,7 +357,7 @@ namespace WinUI3App
 
         private void TakePhotoButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("MainPage: Photo capture initiated");
+            App.Logger?.Debug("MainPage: Photo capture initiated");
 
             // Navigate to photo capture page
             Frame.Navigate(typeof(PhotoBoothPage));
@@ -361,25 +365,49 @@ namespace WinUI3App
 
         private void TestButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("MainPage: Test button clicked");
+            App.Logger?.Debug("MainPage: Test button clicked");
 
-            //// Do the tests
-            //App.Logger?.Warning("Looking for cameras...");
-            //CameraList cameraList = App.canonApi.GetCameraList();
-            //App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
+
+            App.Logger?.Debug("Initializing Canon SDK...");
+            App.canonApi = new CanonAPI();
+            App.canonApi.Initialize();
+            App.Logger?.Information("Initialized Canon SDK!");
+
+
+            // Do the tests
+            App.Logger?.Warning("Looking for cameras...");
+            App.cameraList = App.canonApi.GetCameraList();
+            App.Logger?.Warning($"Found {App.cameraList.Count} camera(s)");
+
+            // Write log to the debugTextBox
+            DebugTextBox.Text += $"Found {App.cameraList.Count} camera(s)\n";
+            DebugTextBox.Visibility = Visibility.Visible;
+
+            // Do the tests
+            if (App.cameraList.Count > 0)
+            {
+                App.Logger?.Debug("MainPage: Camera found, attempting to take a picture.");
+                DebugTextBox.Text += "Camera found, attempting to take a picture.\n";
+                TestTakePictureTemp();
+            }
+            else
+            {
+                App.Logger?.Error("MainPage: No cameras found. Please connect a camera and try again.");
+                DebugTextBox.Text += "No cameras found. Please connect a camera and try again.\n";
+            }
 
         }
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Information("MainPage: Video recording initiated");
+            App.Logger?.Debug("MainPage: Video recording initiated");
             // Navigate to video recording page
             // Frame.Navigate(typeof(VideoRecordingPage));
         }
 
         private void OpenSetttingsPage()
         {
-            App.Logger?.Information("MainPage: Opening advanced settings page");
+            App.Logger?.Debug("MainPage: Opening advanced settings page");
             Frame.Navigate(typeof(SettingsPage));
         }
 
@@ -398,7 +426,192 @@ namespace WinUI3App
                 OpenSetttingsPage();
             }
         }
+
+        private void TestTakePictureTemp()
+        {
+            try
+            {
+                lock (App.cameraLock)
+                {
+                    if (App.cameraList.Count > 0 && !App.isCameraConnectedAndInitialized)
+                    {
+                        App.currentCamera = App.cameraList[0];
+                        // Subscribe first
+                        //Console.WriteLine("Program.cs: Subscribing to C# events from Camera object...");
+                        //currentCamera.PropertyChanged += OnPropertyChanged;
+                        //currentCamera.ObjectChanged += OnObjectChanged;
+                        //currentCamera.StateChanged += OnStateChanged;
+
+                        ConnectCamera(App.currentCamera); // Connects and sets isCameraConnectedAndInitialized
+                    }
+                    else if (App.cameraList.Count > 0)
+                    {
+                        Console.WriteLine("Camera already found and likely initialized.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("No cameras found initially. Please connect a camera and wait...");
+                    }
+                }
+
+                Console.WriteLine("\n-----------------------------------------");
+                Console.WriteLine("Main loop started. Press SPACE to take picture, ENTER to exit.");
+                Console.WriteLine("-----------------------------------------\n");
+
+                // Main loop for EdsGetEvent and Console Input
+                while (App.cameraRunning)
+                {
+                    // Process SDK events
+                    uint err = EDSDK.EdsGetEvent();
+                    if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_OBJECT_NOTREADY)
+                    {
+                        Console.WriteLine($"WARNING: EdsGetEvent returned error: 0x{err:X}");
+                    }
+
+                    // Check for console input WITHOUT blocking EdsGetEvent
+                    if (Console.KeyAvailable)
+                    {
+                        var keyInfo = Console.ReadKey(true); // Read key without displaying it
+
+                        if (keyInfo.Key == ConsoleKey.Enter)
+                        {
+                            running = false; // Signal to exit the loop
+                            break;
+                        }
+                        else if (keyInfo.Key == ConsoleKey.Spacebar) // Changed key to Spacebar for clarity
+                        {
+                            lock (App.cameraLock) // Ensure camera object doesn't change during operation
+                            {
+                                var currentCamera = App.currentCamera;
+                                if (currentCamera != null && App.isCameraConnectedAndInitialized)
+                                {
+                                    try
+                                    {
+                                        Console.WriteLine("\n--- Checking state before TakePicture ---");
+                                        Console.WriteLine($"Model: {App.currentCamera.ProductName}"); //
+                                        Console.WriteLine($"Firmware: {App.currentCamera.FirmwareVersion}"); 
+                                        Console.WriteLine($"Battery: {App.currentCamera.BatteryLevel}%"); 
+                                        Console.WriteLine($"AE Mode: {App.currentCamera.AeMode}"); 
+                                        Console.WriteLine($"ISO: {App.currentCamera.IsoSpeed}"); 
+                                        Console.WriteLine($"Save Destination: {App.currentCamera.ImageSaveDestination}");
+
+                                        Console.WriteLine("-----------------------------------------");
+
+                                        Console.WriteLine("Taking picture (via Camera.TakePicture)...");
+                                        currentCamera.TakePicture(); // Uses PressShutterButton sequence
+                                        Console.WriteLine("TakePicture method call returned.");
+
+                                        // Check state immediately after (Optional - for debugging)
+                                        try
+                                        {
+                                            Thread.Sleep(100); // Small delay
+                                        }
+                                        catch (Exception statusEx) { Console.WriteLine($"Error getting status post-picture: {statusEx.Message}"); }
+
+                                        Console.WriteLine("Waiting for events via EdsGetEvent loop...");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"Error during TakePicture sequence: {ex.Message}");
+                                        if (ex is CanonSdkException sdkEx) { Console.WriteLine($"SDK Error Code: 0x{sdkEx.ErrorCode:X}"); }
+                                        if (ex.InnerException != null) { Console.WriteLine($"Inner Exception: {ex.InnerException.Message}"); }
+                                    }
+                                }
+                                else if (currentCamera == null)
+                                {
+                                    Console.WriteLine("Cannot take picture: Camera not detected.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Cannot take picture: Camera not fully initialized.");
+                                }
+                            } // end lock
+                        } // end else if Spacebar
+                    } // end if KeyAvailable
+
+                    // Short sleep to prevent high CPU usage, adjust as needed
+                    Thread.Sleep(50); // 50ms might be a reasonable balance
+                } // end while(cameraRunning)
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"FATAL Error: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
+                }
+                Console.WriteLine(ex.StackTrace); // Print stack trace for fatal errors
+            }
+            finally
+            {
+                // Clean up resources
+                Console.WriteLine("Cleaning up...");
+                lock (App.cameraLock)
+                {
+                    if (App.currentCamera != null)
+                    {
+                        Console.WriteLine("Disposing camera object...");
+                        App.currentCamera.Dispose(); // Should close session if open, release camera ref
+                        App.currentCamera = null;
+                    }
+                }
+
+                if (App.canonApi != null)
+                {
+                    Console.WriteLine("Terminating Canon SDK...");
+                    App.canonApi.Dispose(); // Should terminate SDK
+                }
+                Console.WriteLine("Cleanup finished. Press Enter to exit completely.");
+                Console.ReadLine(); // Keep window open
+            }
+        }
+
+        static void ConnectCamera(Camera camera)
+        {
+            // Basic check to prevent re-entry, protected by lock in calling methods
+            if (App.isCameraConnectedAndInitialized && camera == App.currentCamera)
+            {
+                Console.WriteLine("ConnectCamera called but already initialized for this camera.");
+                return;
+            }
+
+            try
+            {
+                DeviceInfo deviceInfo = camera.DeviceInfo;
+                Console.WriteLine($"Connected to camera: {deviceInfo.DeviceDescription}");
+                Console.WriteLine($"Port: {deviceInfo.PortName}");
+
+                Console.WriteLine("Opening session...");
+                camera.OpenSession(); // Includes SetSaveToHost internally
+
+                // Event subscriptions moved to Main/OnCameraAdded
+
+                // Print some initial properties
+                try
+                {
+                    Console.WriteLine($"Product Name: {App.currentCamera.ProductName}");
+                    Console.WriteLine($"Battery Level: {App.currentCamera.BatteryLevel}");
+                }
+                catch (Exception ex) { Console.WriteLine($"Error getting initial properties: {ex.Message}"); }
+
+                // --- Command Thread Removed ---
+
+                // Set flag after successful setup
+                App.isCameraConnectedAndInitialized = true;
+                Console.WriteLine("Camera initialization complete. isCameraConnectedAndInitialized = true.");
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error connecting to camera: {ex.Message}");
+                App.isCameraConnectedAndInitialized = false; // Reset on error
+                if (ex is CanonSdkException sdkEx) { Console.WriteLine($"SDK Error Code: 0x{sdkEx.ErrorCode:X}"); }
+                if (ex.InnerException != null) { Console.WriteLine($"Inner Exception: {ex.InnerException.Message}"); }
+                // Optional: Rethrow or handle more gracefully
+            }
+        }
     }
+
 
     public class CornerTouch
     {

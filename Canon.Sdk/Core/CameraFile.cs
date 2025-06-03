@@ -144,7 +144,7 @@ namespace Canon.Sdk.Core
                 if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
                     throw new CanonSdkException("Failed to complete download.", err);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 // Handle exceptions during download
                 Console.WriteLine($"Error downloading file: {ex.Message}");

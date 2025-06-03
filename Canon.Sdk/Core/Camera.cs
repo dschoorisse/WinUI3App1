@@ -4,6 +4,7 @@ using System;
 using System.Runtime.InteropServices;
 using Canon.Sdk.Events;
 using Canon.Sdk.Exceptions;
+using EDSDKLib;
 
 namespace Canon.Sdk.Core
 {
@@ -223,6 +224,234 @@ namespace Canon.Sdk.Core
             Console.WriteLine("CAMERA.CS: Exiting TakePicture.");
         }
 
+
+        #region Abstracted Properties
+
+        /// <summary>
+        /// Gets the product name of the camera model.
+        /// Wraps EDSDK.PropID_ProductName.
+        /// </summary>
+        public string ProductName => GetProperty<string>(EDSDK.PropID_ProductName);
+
+        /// <summary>
+        /// Gets the firmware version of the camera.
+        /// Wraps EDSDK.PropID_FirmwareVersion.
+        /// </summary>
+        public string FirmwareVersion => GetProperty<string>(EDSDK.PropID_FirmwareVersion);
+
+        /// <summary>
+        /// Gets the current battery level as a percentage (approximately).
+        /// Returns -1 for AC power or if the level is unknown/unavailable.
+        /// Wraps EDSDK.PropID_BatteryLevel.
+        /// </summary>
+        public int BatteryLevel
+        {
+            get
+            {
+                try
+                {
+                    uint batteryLevel = GetProperty<uint>(EDSDK.PropID_BatteryLevel);
+                    if (batteryLevel == EDSDK.BatteryLevel_AC) // Check for AC power
+                    {
+                        return -1; // Indicate AC power
+                    }
+                    // The SDK might return values slightly outside 0-100, clamp them.
+                    return Math.Clamp((int)batteryLevel, 0, 100);
+                }
+                catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE)
+                {
+                    // Property might not be available (e.g., camera disconnected)
+                    Console.WriteLine("Warning: Battery level property unavailable.");
+                    return -1; // Indicate unavailable
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error getting BatteryLevel: {ex.Message}");
+                    return -1; // Indicate error
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets whether the Electronic Viewfinder (EVF) output to the PC is enabled.
+        /// Wraps EDSDK.PropID_Evf_OutputDevice.
+        /// </summary>
+        public bool IsEvfOutputToPcEnabled
+        {
+            get
+            {
+                uint outputDevice = GetProperty<uint>(EDSDK.PropID_Evf_OutputDevice);
+                return (outputDevice & EDSDK.EvfOutputDevice_PC) != 0;
+            }
+            set
+            {
+                uint currentOutputDevice = GetProperty<uint>(EDSDK.PropID_Evf_OutputDevice);
+                uint newOutputDevice;
+
+                if (value)
+                {
+                    newOutputDevice = currentOutputDevice | EDSDK.EvfOutputDevice_PC; // Set the PC flag
+                }
+                else
+                {
+                    newOutputDevice = currentOutputDevice & ~EDSDK.EvfOutputDevice_PC; // Clear the PC flag
+                }
+
+                // Only set if the value actually changes
+                if (newOutputDevice != currentOutputDevice)
+                {
+                    SetPropertyData(EDSDK.PropID_Evf_OutputDevice, newOutputDevice);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets whether the camera's built-in flash is enabled (if applicable).
+        /// Note: This might control the *ability* to flash, not necessarily if it *will* flash (which depends on shooting mode, etc.).
+        /// Wraps EDSDK.PropID_FlashOn.
+        /// </summary>
+        public bool IsFlashEnabled
+        {
+            get
+            {
+                // Assuming FlashOn uses 0 for Off and 1 (or non-zero) for On.
+                // Adjust if the SDK uses different values.
+                try
+                {
+                    uint flashStatus = GetProperty<uint>(EDSDK.PropID_FlashOn);
+                    return flashStatus != 0;
+                }
+                catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || ex.ErrorCode == EDSDK.EDS_ERR_NOT_SUPPORTED)
+                {
+                    Console.WriteLine($"Warning: FlashOn property unavailable or not supported (0x{ex.ErrorCode:X}). Returning false.");
+                    return false; // Default to false if not available/supported
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error getting IsFlashEnabled: {ex.Message}");
+                    return false; // Default to false on error
+                }
+            }
+            set
+            {
+                // Assuming 1 for On, 0 for Off.
+                uint flashValue = value ? 1u : 0u;
+                try
+                {
+                    SetPropertyData(EDSDK.PropID_FlashOn, flashValue);
+                }
+                catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || ex.ErrorCode == EDSDK.EDS_ERR_NOT_SUPPORTED)
+                {
+                    Console.WriteLine($"Warning: Cannot set FlashOn property, it is unavailable or not supported (0x{ex.ErrorCode:X}).");
+                    // Optionally re-throw or just log
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error setting IsFlashEnabled: {ex.Message}");
+                    // Optionally re-throw
+                }
+            }
+        }
+
+        /// <summary>
+        /// Represents the destination for saving images.
+        /// </summary>
+        public enum SaveDestination : uint
+        {
+            Camera = EDSDK.EdsSaveTo.Camera,
+            Host = EDSDK.EdsSaveTo.Host,
+            Both = EDSDK.EdsSaveTo.Both
+        }
+
+        /// <summary>
+        /// Gets or sets where images are saved (Camera, Host PC, or Both).
+        /// Wraps EDSDK.PropID_SaveTo. Setting to Host or Both also sets capacity.
+        /// </summary>
+        public SaveDestination ImageSaveDestination
+        {
+            get
+            {
+                uint saveToValue = GetProperty<uint>(EDSDK.PropID_SaveTo);
+                return (SaveDestination)saveToValue;
+            }
+            set
+            {
+                uint saveToValue = (uint)value;
+                SetPropertyData(EDSDK.PropID_SaveTo, saveToValue);
+
+                // If saving to Host or Both, we need to inform the camera about the host capacity.
+                if (value == SaveDestination.Host || value == SaveDestination.Both)
+                {
+                    SetHostCapacity(); // Use a helper method
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Gets the current Auto Exposure (AE) mode.
+        /// Wraps EDSDK.PropID_AEMode. Consider creating an enum for better usability.
+        /// </summary>
+        public uint AeMode => GetProperty<uint>(EDSDK.PropID_AEMode); // Consider returning an enum mapped from these values
+
+
+        /// <summary>
+        /// Gets the current ISO speed.
+        /// Wraps EDSDK.PropID_ISOSpeed.
+        /// </summary>
+        public uint IsoSpeed => GetProperty<uint>(EDSDK.PropID_ISOSpeed);
+
+
+        /// <summary>
+        /// Gets the current Aperture Value (Av).
+        /// Wraps EDSDK.PropID_Av. You might want to map this uint to actual f-stop values using EdsGetPropertyDesc.
+        /// </summary>
+        private uint ApertureValue => GetProperty<uint>(EDSDK.PropID_Av);
+
+
+        /// <summary>
+        /// Gets the current Shutter Speed (Tv).
+        /// Wraps EDSDK.PropID_Tv. You might want to map this uint to actual shutter speed strings (e.g., "1/100", "Bulb") using EdsGetPropertyDesc.
+        /// </summary>
+        private uint ShutterSpeedValue => GetProperty<uint>(EDSDK.PropID_Tv);
+
+
+        /// <summary>
+        /// Gets the number of available shots based on current settings and storage capacity.
+        /// Wraps EDSDK.PropID_AvailableShots. Note: This reflects host capacity if SaveTo is Host/Both.
+        /// </summary>
+        private uint AvailableShots => GetProperty<uint>(EDSDK.PropID_AvailableShots);
+
+        #endregion
+
+
+        // Helper method to set host capacity (called by ImageSaveDestination setter)
+        private void SetHostCapacity()
+        {
+            try
+            {
+                EDSDK.EdsCapacity capacity = new EDSDK.EdsCapacity
+                {
+                    NumberOfFreeClusters = 0x7FFFFFFF, // Indicate large capacity
+                    BytesPerSector = 0x1000,           // Common sector size
+                    Reset = 1                          // Reset camera's capacity calculation for host
+                };
+
+                uint err = EDSDK.EdsSetCapacity(_cameraRef, capacity);
+                if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_NOT_SUPPORTED) // Ignore NOT_SUPPORTED error
+                {
+                    Console.WriteLine($"Warning: Failed to set capacity for host saving. SDK Error: 0x{err:X}");
+                    // Don't throw here, as setting SaveTo might still work partially
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error setting host capacity: {ex.Message}");
+            }
+        }
+
+
+
         /// <summary>
         /// Sets a property event handler for the camera
         /// </summary>
@@ -308,7 +537,8 @@ namespace Canon.Sdk.Core
         /// <param name="propId">The property ID</param>
         /// <param name="param">Optional parameter</param>
         /// <returns>The property data</returns>
-        public T GetProperty<T>(uint propId, int param = 0)
+        /// TODO: changes this internal to private, only properties and methods should be exposed to the outside
+        internal T GetProperty<T>(uint propId, int param = 0)
         {
             EDSDKLib.EDSDK.EdsDataType dataType;
             int dataSize;

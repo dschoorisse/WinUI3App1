@@ -144,7 +144,14 @@ namespace WinUI3App // Your main application namespace
         public void StopMonitoring()
         {
             _logger.Information("DnpStatusService: Stopping DNP status file monitoring.");
-            _timer.Stop();
+            if(_timer != null)
+            {
+                _timer.Stop();
+            }
+            else
+            {
+                _logger.Debug("DnpStatusService: Timer is null, cannot stop monitoring.");
+            }
         }
 
         private async void Timer_Tick(object sender, object e)

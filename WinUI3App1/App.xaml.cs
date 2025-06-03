@@ -71,11 +71,11 @@ namespace WinUI3App1
 
         // Canon EDSDK 
         public static CanonAPI canonApi;
-        static bool running = true;
+        public static bool cameraRunning = true;
         public static Camera currentCamera;
-        static object cameraLock = new object(); // For thread safety if OnCameraAdded is used
-        static bool isCameraConnectedAndInitialized = false; // To prevent re-entry issues
-
+        public static object cameraLock = new object(); // For thread safety if OnCameraAdded is used
+        public static bool isCameraConnectedAndInitialized = false; // To prevent re-entry issues
+        public static CameraList cameraList;
 
         public App()
         {
@@ -285,17 +285,17 @@ namespace WinUI3App1
             #endregion
 
             #region Canon SDK
-            App.Logger?.Debug("Initializing Canon SDK...");
-            canonApi = new CanonAPI();
-            canonApi.Initialize();
-            App.Logger?.Information("Initialized Canon SDK!");
+            //App.Logger?.Debug("Initializing Canon SDK...");
+            //canonApi = new CanonAPI();
+            //canonApi.Initialize();
+            //App.Logger?.Information("Initialized Canon SDK!");
 
-            // Set the camera on added handler like in console application
+            //// Set the camera on added handler like in console application
 
-            // Do the tests
-            App.Logger?.Warning("Looking for cameras...");
-            CameraList cameraList = canonApi.GetCameraList();
-            App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
+            //// Do the tests
+            //App.Logger?.Warning("Looking for cameras...");
+            //cameraList = canonApi.GetCameraList();
+            //App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
 
             #endregion
         }
@@ -532,11 +532,11 @@ namespace WinUI3App1
                 }
                 else if (_currentLightCommandSent != LIGHT_CMD_STANDBY && !_printerLightFinishedToStandbyTimer.IsRunning)
                 {
-                    // If it's idle, wasn't just printing, and the FINISHED->STANDBY timer isn't running,
+                    // If it's idle, wasn't just printing, and the FINISHED->STANDBY timer isn't cameraRunning,
                     // it should probably be STANDBY.
                     newDesiredLightState = LIGHT_CMD_STANDBY;
                 }
-                // If timer is running, newDesiredLightState remains null, current light command (_currentLightCommandSent) should be FINISHED.
+                // If timer is cameraRunning, newDesiredLightState remains null, current light command (_currentLightCommandSent) should be FINISHED.
                 // The timer tick will handle the transition to STANDBY.
             }
             // Handle specific error states from DNP JSON to set a distinct error light
