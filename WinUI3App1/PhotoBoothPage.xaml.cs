@@ -460,10 +460,12 @@ namespace WinUI3App
             App.Logger.Debug("TakePhotoSimulation: Capture delay complete.");
             #endregion
 
-            // TODO: download the photo from the camera
+            // The picture that the camera took is downloaded automatically by the CameraService in an event handler
+            // The path to the downloaded image is capturedImagePath
+
 
             // Add the path of the "taken" photo (currently a placeholder) to our list
-            _photoPaths.Add(PLACEHOLDER_IMAGE_PATH);
+            _photoPaths.Add(capturedImagePath);
             // Increment the counter for photos taken
             _photosTaken++;
             App.Logger.Debug("TakePhotoSimulation: Placeholder photo recorded. Total photos taken: {PhotosTakenCount}.", _photosTaken);
@@ -478,8 +480,8 @@ namespace WinUI3App
             CameraPlaceholderImage.Visibility = Visibility.Collapsed; // Hide the live feed/placeholder
             App.Logger.Debug("TakePhotoSimulation: CameraPlaceholderImage hidden.");
 
-            TakenPhotoImage.Source = new BitmapImage(new Uri(PLACEHOLDER_IMAGE_PATH)); // Set the image source for the preview
-            App.Logger.Debug("TakePhotoSimulation: TakenPhotoImage source set to placeholder.");
+            TakenPhotoImage.Source = new BitmapImage(new Uri(capturedImagePath)); // Set the image source for the preview
+            App.Logger.Debug($"TakePhotoSimulation: TakenPhotoImage source set to picture taken at {capturedImagePath}.");
 
             // Ensure the RenderTransform is set up correctly for animations and reset its initial state (scaled down, transparent)
             if (TakenPhotoImage.RenderTransform is not ScaleTransform)
