@@ -443,6 +443,10 @@ namespace WinUI3App
                         //currentCamera.StateChanged += OnStateChanged;
 
                         ConnectCamera(App.currentCamera); // Connects and sets isCameraConnectedAndInitialized
+                        while (App.currentCamera.BatteryLevel == -1)
+                        {
+                            Thread.Sleep(10); // Small delay
+                        }
                     }
                     else if (App.cameraList.Count > 0)
                     {
@@ -453,81 +457,59 @@ namespace WinUI3App
                         Console.WriteLine("No cameras found initially. Please connect a camera and wait...");
                     }
                 }
-
-                Console.WriteLine("\n-----------------------------------------");
-                Console.WriteLine("Main loop started. Press SPACE to take picture, ENTER to exit.");
-                Console.WriteLine("-----------------------------------------\n");
-
-                // Main loop for EdsGetEvent and Console Input
-                while (App.cameraRunning)
+                                
+                // Process SDK events
+                uint err = EDSDK.EdsGetEvent();
+                if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_OBJECT_NOTREADY)
                 {
-                    // Process SDK events
-                    uint err = EDSDK.EdsGetEvent();
-                    if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_OBJECT_NOTREADY)
-                    {
-                        Console.WriteLine($"WARNING: EdsGetEvent returned error: 0x{err:X}");
-                    }
+                    Console.WriteLine($"WARNING: EdsGetEvent returned error: 0x{err:X}");
+                }
 
-                    // Check for console input WITHOUT blocking EdsGetEvent
-                    if (Console.KeyAvailable)
+                lock (App.cameraLock) // Ensure camera object doesn't change during operation
+                {
+                    var currentCamera = App.currentCamera;
+                    if (currentCamera != null && App.isCameraConnectedAndInitialized)
                     {
-                        var keyInfo = Console.ReadKey(true); // Read key without displaying it
+                        try
+                        {
+                            Console.WriteLine("\n--- Checking state before TakePicture ---");
+                            Console.WriteLine($"Model: {App.currentCamera.ProductName}"); //
+                            Console.WriteLine($"Firmware: {App.currentCamera.FirmwareVersion}"); 
+                            Console.WriteLine($"Battery: {App.currentCamera.BatteryLevel}%"); 
+                            Console.WriteLine($"AE Mode: {App.currentCamera.AeMode}"); 
+                            Console.WriteLine($"ISO: {App.currentCamera.IsoSpeed}"); 
+                            Console.WriteLine($"Save Destination: {App.currentCamera.ImageSaveDestination}");
 
-                        if (keyInfo.Key == ConsoleKey.Enter)
-                        {
-                            running = false; // Signal to exit the loop
-                            break;
-                        }
-                        else if (keyInfo.Key == ConsoleKey.Spacebar) // Changed key to Spacebar for clarity
-                        {
-                            lock (App.cameraLock) // Ensure camera object doesn't change during operation
+                            Console.WriteLine("-----------------------------------------");
+
+                            Console.WriteLine("Taking picture (via Camera.TakePicture)...");
+                            currentCamera.TakePicture(); // Uses PressShutterButton sequence
+                            Console.WriteLine("TakePicture method call returned.");
+
+                            // Check state immediately after (Optional - for debugging)
+                            try
                             {
-                                var currentCamera = App.currentCamera;
-                                if (currentCamera != null && App.isCameraConnectedAndInitialized)
-                                {
-                                    try
-                                    {
-                                        Console.WriteLine("\n--- Checking state before TakePicture ---");
-                                        Console.WriteLine($"Model: {App.currentCamera.ProductName}"); //
-                                        Console.WriteLine($"Firmware: {App.currentCamera.FirmwareVersion}"); 
-                                        Console.WriteLine($"Battery: {App.currentCamera.BatteryLevel}%"); 
-                                        Console.WriteLine($"AE Mode: {App.currentCamera.AeMode}"); 
-                                        Console.WriteLine($"ISO: {App.currentCamera.IsoSpeed}"); 
-                                        Console.WriteLine($"Save Destination: {App.currentCamera.ImageSaveDestination}");
+                                Thread.Sleep(100); // Small delay
+                            }
+                            catch (Exception statusEx) { Console.WriteLine($"Error getting status post-picture: {statusEx.Message}"); }
 
-                                        Console.WriteLine("-----------------------------------------");
-
-                                        Console.WriteLine("Taking picture (via Camera.TakePicture)...");
-                                        currentCamera.TakePicture(); // Uses PressShutterButton sequence
-                                        Console.WriteLine("TakePicture method call returned.");
-
-                                        // Check state immediately after (Optional - for debugging)
-                                        try
-                                        {
-                                            Thread.Sleep(100); // Small delay
-                                        }
-                                        catch (Exception statusEx) { Console.WriteLine($"Error getting status post-picture: {statusEx.Message}"); }
-
-                                        Console.WriteLine("Waiting for events via EdsGetEvent loop...");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"Error during TakePicture sequence: {ex.Message}");
-                                        if (ex is CanonSdkException sdkEx) { Console.WriteLine($"SDK Error Code: 0x{sdkEx.ErrorCode:X}"); }
-                                        if (ex.InnerException != null) { Console.WriteLine($"Inner Exception: {ex.InnerException.Message}"); }
-                                    }
-                                }
-                                else if (currentCamera == null)
-                                {
-                                    Console.WriteLine("Cannot take picture: Camera not detected.");
-                                }
-                                else
-                                {
-                                    Console.WriteLine("Cannot take picture: Camera not fully initialized.");
-                                }
-                            } // end lock
-                        } // end else if Spacebar
-                    } // end if KeyAvailable
+                            Console.WriteLine("Waiting for events via EdsGetEvent loop...");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error during TakePicture sequence: {ex.Message}");
+                            if (ex is CanonSdkException sdkEx) { Console.WriteLine($"SDK Error Code: 0x{sdkEx.ErrorCode:X}"); }
+                            if (ex.InnerException != null) { Console.WriteLine($"Inner Exception: {ex.InnerException.Message}"); }
+                        }
+                    }
+                    else if (currentCamera == null)
+                    {
+                        Console.WriteLine("Cannot take picture: Camera not detected.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Cannot take picture: Camera not fully initialized.");
+                    }
 
                     // Short sleep to prevent high CPU usage, adjust as needed
                     Thread.Sleep(50); // 50ms might be a reasonable balance
