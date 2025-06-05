@@ -320,19 +320,15 @@ namespace WinUI3App1
 
         private async Task HandleImageDownloadAsync(IntPtr dirItemRef)
         {
-
             if (dirItemRef == IntPtr.Zero)
             {
                 _logger.Error("CameraService: HandleImageDownloadAsync called with null dirItemRef.");
                 _captureTcs?.TrySetException(new ArgumentNullException(nameof(dirItemRef)));
                 return;
             }
-            else
-            {
-                _logger.Verbose($"CameraService: HandleImageDownloadAsync called with dirItemRef of {dirItemRef}.");
-            }
 
-            string filePath = null; // Houd het pad bij voor logging, zelfs bij falen
+            string finalSavePath = null; // Houd het uiteindelijke pad bij
+            string configuredOutputPath = App.CurrentSettings?.PhotoOutputPath; // Haal pad uit instellingen
 
             try
             {
@@ -343,24 +339,59 @@ namespace WinUI3App1
                     throw new CanonSdkException($"Failed to get directory item info (0x{err:X}).", err);
                 }
 
-                string fileNameToUse = string.IsNullOrWhiteSpace(dirItemInfo.szFileName) ? $"capture_{Guid.NewGuid()}.jpg" : dirItemInfo.szFileName;
-                // Sanitize filename (hoewel GUID meestal veilig is)
-                foreach (char invalidChar in Path.GetInvalidFileNameChars())
+                string originalFileNameFromCamera = dirItemInfo.szFileName;
+                // Maak een unieke bestandsnaam om conflicten te voorkomen, maar behoud de extensie
+                string fileExtension = Path.GetExtension(originalFileNameFromCamera);
+                if (string.IsNullOrEmpty(fileExtension)) fileExtension = ".jpg"; // Default extensie
+                string baseName = Path.GetFileNameWithoutExtension(originalFileNameFromCamera);
+                if (string.IsNullOrEmpty(baseName)) baseName = "capture";
+
+                string fileNameToUse = $"{baseName}_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid().ToString().Substring(0, 4)}{fileExtension}";
+
+
+                StorageFolder targetDirectory;
+                bool useConfiguredPath = false;
+
+                if (!string.IsNullOrEmpty(configuredOutputPath))
                 {
-                    fileNameToUse = fileNameToUse.Replace(invalidChar, '_');
+                    try
+                    {
+                        if (!Directory.Exists(configuredOutputPath))
+                        {
+                            _logger.Information("CameraService: Configured PhotoOutputPath '{Path}' does not exist, attempting to create it.", configuredOutputPath);
+                            Directory.CreateDirectory(configuredOutputPath); // Probeer de map aan te maken
+                        }
+                        finalSavePath = Path.Combine(configuredOutputPath, fileNameToUse);
+                        useConfiguredPath = true;
+                        _logger.Debug("CameraService: Attempting to save to configured PhotoOutputPath: {FilePath}", finalSavePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, "CameraService: Error creating or accessing configured PhotoOutputPath '{Path}'. Falling back to AppData.", configuredOutputPath);
+                        // Fallback logica hieronder wordt nu actief
+                        useConfiguredPath = false; // Forceer fallback
+                    }
                 }
 
-                StorageFolder localCacheFolder = ApplicationData.Current.LocalFolder;
-                StorageFolder capturesFolder = await localCacheFolder.CreateFolderAsync("PhotoboothCaptures", CreationCollisionOption.OpenIfExists);
-                filePath = Path.Combine(capturesFolder.Path, fileNameToUse);
+                if (!useConfiguredPath) // Als geen pad geconfigureerd is, of toegang/creatie mislukt is
+                {
+                    _logger.Warning("CameraService: PhotoOutputPath not configured or accessible. Using fallback AppData/PhotoboothCaptures.");
+                    StorageFolder localCacheFolder = ApplicationData.Current.LocalFolder;
+                    targetDirectory = await localCacheFolder.CreateFolderAsync("PhotoboothCaptures", CreationCollisionOption.OpenIfExists);
+                    finalSavePath = Path.Combine(targetDirectory.Path, fileNameToUse);
+                    _logger.Debug("CameraService: Saving to fallback AppData path: {FilePath}", finalSavePath);
+                }
 
-                _logger.Debug("CameraService: Preparing to download image '{OriginalFileName}' as '{LocalFileName}' to {FilePath}. Size: {Size}", dirItemInfo.szFileName, fileNameToUse, filePath, dirItemInfo.Size);
+                _logger.Information("CameraService: Preparing to download image '{OriginalFileName}' as '{LocalFileName}' to {FilePath}. Size: {Size}",
+                    dirItemInfo.szFileName, fileNameToUse, finalSavePath, dirItemInfo.Size);
 
-                using (var fileStreamWrapper = Canon.Sdk.Core.Stream.CreateFileStream(filePath, EDSDK.EdsFileCreateDisposition.CreateAlways, EDSDK.EdsAccess.ReadWrite))
+                using (var fileStreamWrapper = Canon.Sdk.Core.Stream.CreateFileStream(finalSavePath, EDSDK.EdsFileCreateDisposition.CreateAlways, EDSDK.EdsAccess.ReadWrite))
                 {
                     err = EDSDK.EdsDownload(dirItemRef, dirItemInfo.Size, fileStreamWrapper.Handle);
                     if (err != EDSDK.EDS_ERR_OK)
                     {
+                        // Probeer het bestand te verwijderen als de download mislukt om een half bestand te voorkomen
+                        if (File.Exists(finalSavePath)) File.Delete(finalSavePath);
                         throw new CanonSdkException($"SDK EdsDownload failed (0x{err:X}). Check camera state and card.", err);
                     }
                     _logger.Debug("CameraService: EdsDownload call completed for {FileName}.", fileNameToUse);
@@ -374,21 +405,33 @@ namespace WinUI3App1
                     {
                         _logger.Debug("CameraService: EdsDownloadComplete call succeeded for {FileName}.", fileNameToUse);
                     }
-                } // fileStreamWrapper wordt hier gedisposed
+                }
 
-                _logger.Information("CameraService: Image successfully downloaded: {FilePath}", filePath);
-                PhotoSuccessfullyTakenAndDownloaded?.Invoke(this, filePath);
-                _captureTcs?.TrySetResult(filePath);
+                _logger.Information("CameraService: Image successfully downloaded: {FilePath}", finalSavePath);
+                PhotoSuccessfullyTakenAndDownloaded?.Invoke(this, finalSavePath);
+                _captureTcs?.TrySetResult(finalSavePath);
             }
             catch (CanonSdkException ex)
             {
-                _logger.Error(ex, "CameraService: SDK error during image download to {FilePath}: {ErrorMessage} (Code: 0x{ErrorCode:X})", filePath ?? "Unknown Path", ex.Message, ex.ErrorCode);
-                CameraErrorOccurred?.Invoke(this, $"Download Error: {ex.Message}");
+                _logger.Error(ex, "CameraService: SDK error during image download to {FilePath}: {ErrorMessage} (Code: 0x{ErrorCode:X})", finalSavePath ?? "Unknown Path", ex.Message, ex.ErrorCode);
+                CameraErrorOccurred?.Invoke(this, $"Download Error (SDK): {ex.Message}");
+                _captureTcs?.TrySetException(ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.Error(ex, "CameraService: Unauthorized access during image download/save to {FilePath}. Check permissions.", finalSavePath ?? "Unknown Path");
+                CameraErrorOccurred?.Invoke(this, $"Permission Error saving photo: {ex.Message}");
+                _captureTcs?.TrySetException(ex);
+            }
+            catch (IOException ex)
+            {
+                _logger.Error(ex, "CameraService: IO error during image download/save to {FilePath}.", finalSavePath ?? "Unknown Path");
+                CameraErrorOccurred?.Invoke(this, $"File Error saving photo: {ex.Message}");
                 _captureTcs?.TrySetException(ex);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "CameraService: Generic error during image download to {FilePath}.", filePath ?? "Unknown Path");
+                _logger.Error(ex, "CameraService: Generic error during image download to {FilePath}.", finalSavePath ?? "Unknown Path");
                 CameraErrorOccurred?.Invoke(this, $"Download Error: {ex.Message}");
                 _captureTcs?.TrySetException(ex);
             }
@@ -401,6 +444,7 @@ namespace WinUI3App1
                 }
             }
         }
+
 
         private async void OnSdkStateEventReceived(object sender, StateEventArgs e)
         {
