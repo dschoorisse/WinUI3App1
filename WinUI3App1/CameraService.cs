@@ -63,6 +63,9 @@ namespace WinUI3App1
                 _isSdkInitialized = true;
                 _logger.Information("CameraService: Canon SDK C# Wrapper Initialized.");
 
+                // Deze regel instrueert de Canon SDK (via je CanonApi.cs wrapper)
+                // om de methode OnRawCameraDetectedCallback in CameraService.cs aan te roepen
+                // telkens wanneer de SDK detecteert dat er een camera is aangesloten (of beschikbaar komt voor de SDK).
                 _canonAPI.SetCameraAddedHandler(OnRawCameraDetectedCallback);
                 _logger.Information("CameraService: CameraAddedHandler set.");
 
@@ -95,6 +98,7 @@ namespace WinUI3App1
                 {
                     _logger.Information("CameraService: Active camera already exists. Refreshing list to ensure consistency.");
                     await RefreshCameraListAsync();
+
                     // Als de actieve camera niet meer in de lijst is, zal RefreshCameraListAsync hem disablen.
                     // Als er geen camera's zijn, of een andere camera is nu de eerste, dan
                     // zou je kunnen overwegen om opnieuw te proberen te verbinden als de actieve camera weg is.
@@ -426,7 +430,7 @@ namespace WinUI3App1
             _logger.Debug("CameraService: OnSdkPropertyEventReceived: Type=0x{EventType:X}, ID=0x{PropertyId:X}, Param=0x{Param:X}", e.EventType, e.PropertyId, e.Parameter);
             if (e.PropertyId == EDSDK.PropID_Unknown) // 0x0000ffff
             {
-                _logger.Information("CameraService: PropertyEvent with Unknown PropertyID. Consider re-querying relevant properties if UI depends on them.");
+                _logger.Warning("CameraService: PropertyEvent with Unknown PropertyID. Consider re-querying relevant properties if UI depends on them.");
             }
             // Je kunt hier specifieke properties afhandelen als dat nodig is voor de UI.
         }
