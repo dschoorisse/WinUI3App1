@@ -224,6 +224,25 @@ namespace Canon.Sdk.Core
             Console.WriteLine("CAMERA.CS: Exiting TakePicture.");
         }
 
+        /// <summary>
+        /// Extends the camera's auto power-off timer.
+        /// </summary>
+        public void ExtendShutdownTimer()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero)
+                throw new InvalidOperationException("Camera reference is not valid (likely not connected or session not open).");
+
+            uint err = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, EDSDKLib.EDSDK.CameraCommand_ExtendShutDownTimer, 0);
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
+            {
+                // Gooi een exception of log een waarschuwing, afhankelijk van hoe kritiek je dit vindt.
+                // Console.WriteLine($"Warning: Failed to extend shutdown timer. SDK Error: 0x{err:X}");
+                throw new CanonSdkException("Failed to extend shutdown timer", err);
+            }
+        }
+
 
         #region Abstracted Properties
 

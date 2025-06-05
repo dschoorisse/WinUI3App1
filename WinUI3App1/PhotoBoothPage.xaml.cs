@@ -32,6 +32,7 @@ namespace WinUI3App
         private const int TOTAL_PHOTOS_TO_TAKE = 3;
         private List<string> _photoPaths = new List<string>(); // contains the paths of the taken individual photos
 
+        // Construct place holder image path
         private static readonly string PlaceholderImageFileName = "placeholder.jpg";
         private static readonly string AssetsFolderName = "Assets";
         private static readonly string PLACEHOLDER_IMAGE_PATH = System.IO.Path.Combine(AppContext.BaseDirectory, AssetsFolderName, PlaceholderImageFileName);

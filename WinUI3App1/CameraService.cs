@@ -472,6 +472,27 @@ namespace WinUI3App1
                 CameraErrorOccurred?.Invoke(this, $"SDK Internal Error: 0x{e.Parameter:X}");
                 await DisconnectActiveCameraAsync(notifyUI: true); // Disconnect, app might need restart or SDK re-init
             }
+            else if (e.EventType == EDSDK.StateEvent_WillSoonShutDown)
+            {
+                _logger.Warning("CameraService: WillSoonShutDown event: Param (seconds until shutdown) = {Param}. Extending timer.", e.Parameter);
+                if (_activeCamera != null && IsCameraSessionOpen)
+                {
+                    try
+                    {
+                        // Gebruik de nieuwe methode in de wrapper
+                        _activeCamera.ExtendShutdownTimer();
+                        _logger.Information("CameraService: Successfully called ExtendShutdownTimer via wrapper. The camera will remain standby longer now.");
+                    }
+                    catch (CanonSdkException sdkEx)
+                    {
+                        _logger.Warning("CameraService: Failed to send ExtendShutDownTimer command via wrapper. SDK Error: 0x{ErrorCode:X} - {ErrorMessage}", sdkEx.ErrorCode, sdkEx.Message);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, "CameraService: Exception while calling ExtendShutdownTimer via wrapper.");
+                    }
+                }
+            }
         }
 
         private void OnSdkPropertyEventReceived(object sender, PropertyEventArgs e)
