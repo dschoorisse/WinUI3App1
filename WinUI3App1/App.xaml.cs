@@ -123,6 +123,20 @@ namespace WinUI3App1
             AppCameraService = new CameraService(Logger); // Pass the logger
             await AppCameraService.InitializeAsync();
 
+            if (AppCameraService != null)
+            {
+                AppCameraService.CameraReady += AppCameraService_CameraReady;
+                AppCameraService.CameraConnectionFailed += AppCameraService_CameraConnectionFailed;
+                AppCameraService.CameraDisconnected += AppCameraService_CameraDisconnected;
+                AppCameraService.CameraErrorOccurred += AppCameraService_CameraErrorOccurred;
+                // PhotoSuccessfullyTakenAndDownloaded kan hier ook of direct in de aanroepende code.
+            }
+            else
+            {
+                Logger.Error("App: AppCameraService is NULL na instantiatie, kan niet abonneren op events.");
+            }
+
+
             // 4. Preload background image if specified
             //await PreloadBackgroundImageAsync();
 
@@ -1118,6 +1132,33 @@ namespace WinUI3App1
             }
 
         }
+
+        // NIEUW: Event handler methodes
+        #region Camera event handlers
+        private void AppCameraService_CameraReady(object sender, EventArgs e)
+        {
+            Logger.Information("App: Event triggered - CameraReady. Camera is verbonden en sessie is open.");
+            // Hier kun je UI-updates triggeren of andere logica starten die afhankelijk is van een werkende camera.
+        }
+
+        private void AppCameraService_CameraConnectionFailed(object sender, EventArgs e)
+        {
+            Logger.Error("App: Event triggered - CameraConnectionFailed. Kon geen verbinding maken of sessie openen.");
+            // Toon eventueel een melding aan de gebruiker.
+        }
+
+        private void AppCameraService_CameraDisconnected(object sender, EventArgs e)
+        {
+            Logger.Warning("App: Event triggered - CameraDisconnected. Camera is losgekoppeld of sessie is gesloten.");
+            // Update UI om aan te geven dat de camera niet beschikbaar is.
+        }
+
+        private void AppCameraService_CameraErrorOccurred(object sender, string errorMessage)
+        {
+            Logger.Error("App: Event triggered - CameraErrorOccurred. Foutmelding: {ErrorMessage}", errorMessage);
+            // Toon eventueel een specifieke foutmelding aan de gebruiker.
+        }
+        #endregion
 
         private async static void LogHeartbeatLogging(object state) // 'state' parameter is required by TimerCallback delegate, but we won't use it here
         {
