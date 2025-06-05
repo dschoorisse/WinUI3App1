@@ -2,6 +2,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using System.Threading; // Toegevoegd voor Thread.Sleep
 using Canon.Sdk.Events;
 using Canon.Sdk.Exceptions;
 using EDSDKLib;
@@ -15,7 +16,7 @@ namespace Canon.Sdk.Core
     {
         private bool _disposed = false;
         private IntPtr _cameraRef;
-        private CameraEventHandler _eventHandler;
+        private CameraEventHandler _eventHandler; // Wordt geïnitialiseerd in de constructor
         private DeviceInfo _deviceInfo;
         private GCHandle _gcHandle;
 
@@ -41,6 +42,11 @@ namespace Canon.Sdk.Core
         {
             get
             {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(Camera));
+                if (_cameraRef == IntPtr.Zero)
+                    throw new InvalidOperationException("Camera reference is not valid.");
+
                 if (_deviceInfo == null)
                 {
                     EDSDKLib.EDSDK.EdsDeviceInfo nativeDeviceInfo;
@@ -50,76 +56,79 @@ namespace Canon.Sdk.Core
                     {
                         throw new CanonSdkException("Failed to get device information", err);
                     }
-
                     _deviceInfo = new DeviceInfo(nativeDeviceInfo);
                 }
-
                 return _deviceInfo;
             }
         }
 
-        /// <summary>
-        /// Initializes a new instance of the Camera class
-        /// </summary>
-        /// <param name="cameraRef">The native camera reference</param>
         internal Camera(IntPtr cameraRef)
         {
-            _cameraRef = cameraRef;
-            _eventHandler = new CameraEventHandler(this);
+            if (cameraRef == IntPtr.Zero)
+                throw new ArgumentNullException(nameof(cameraRef), "Camera reference cannot be zero.");
 
-            // Create a GCHandle to prevent garbage collection
+            _cameraRef = cameraRef;
+            _eventHandler = new CameraEventHandler(this); // Moet _cameraRef hebben voor registratie
+
             _gcHandle = GCHandle.Alloc(this);
 
-            // Initialize delegates
             _propertyEventHandler = new EDSDKLib.EDSDK.EdsPropertyEventHandler(HandlePropertyEvent);
-            _objectEventHandler = new EDSDKLib.EDSDK.EdsObjectEventHandler(HandleObjectEvent); // necessary for auto-download
+            _objectEventHandler = new EDSDKLib.EDSDK.EdsObjectEventHandler(HandleObjectEvent);
             _stateEventHandler = new EDSDKLib.EDSDK.EdsStateEventHandler(HandleStateEvent);
 
-            // Initialize event handlers
-            SetupEventHandlers();
+            SetupEventHandlers(); // Registreert de handlers bij de SDK
         }
 
         /// <summary>
-        /// Gets the name of the camera model
+        /// Sends a generic command to the camera.
+        /// This is a low-level abstraction and should be used by more specific methods if possible.
         /// </summary>
-        /// <returns>The camera model name</returns>
-        public string GetModelName()
+        /// <param name="command">The command ID to send (e.g., EDSDK.CameraCommand_TakePicture).</param>
+        /// <param name="parameter">The parameter for the command (default is 0).</param>
+        /// <exception cref="ObjectDisposedException">Thrown if the camera object is disposed.</exception>
+        /// <exception cref="InvalidOperationException">Thrown if the camera reference is not valid.</exception>
+        /// <exception cref="CanonSdkException">Thrown if the SDK command fails.</exception>
+        public void SendCommand(uint command, int parameter = 0)
         {
-            string modelName;
-            uint err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, EDSDKLib.EDSDK.PropID_ProductName, 0, out modelName);
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero)
+                throw new InvalidOperationException("Camera reference is not valid (likely not connected or session not open).");
 
+            uint err = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, command, parameter);
             if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
             {
-                throw new CanonSdkException("Failed to get camera model name", err);
+                Console.WriteLine($"Error sending command 0x{command:X} with param {parameter}. SDK Error: 0x{err:X}"); // Extra logging
+                throw new CanonSdkException($"Failed to send command 0x{command:X} with parameter {parameter}", err);
             }
-
-            return modelName;
         }
 
-        /// <summary>
-        /// Opens a session with the camera
-        /// </summary>
+        public string GetModelName()
+        {
+            // Gebruikt GetProperty die intern EdsGetPropertyData aanroept
+            return GetProperty<string>(EDSDKLib.EDSDK.PropID_ProductName);
+        }
+
         public void OpenSession()
         {
-            uint err = EDSDKLib.EDSDK.EdsOpenSession(_cameraRef);
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
 
+            uint err = EDSDKLib.EDSDK.EdsOpenSession(_cameraRef);
             if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
             {
                 throw new CanonSdkException("Failed to open session with camera", err);
             }
-
-            // Set camera to save to host
-            SetSaveToHost();
+            SetSaveToHost(); // Essentieel na openen sessie
         }
 
-
-
-        /// <summary>
-        /// Sets the camera to save images to the host computer
-        /// </summary>
-        // In Camera.cs -> SetSaveToHost()
         private void SetSaveToHost()
         {
+            // Deze methode gebruikt direct EdsSetPropertyData en EdsSetCapacity,
+            // wat prima is omdat het specifieke property-instellingen zijn, geen generieke commando's.
+            // Je zou SetPropertyData<uint>(...) kunnen gebruiken als je die methode ook aanpast
+            // om de sizeof(uint) correct te gebruiken ipv Marshal.SizeOf(data).
+            // Voor nu laten we het zoals het was, omdat het een property-set is, geen command.
             try
             {
                 uint saveToValue = (uint)EDSDKLib.EDSDK.EdsSaveTo.Host;
@@ -129,28 +138,25 @@ namespace Canon.Sdk.Core
                     Console.WriteLine($"CRITICAL ERROR: Failed to set PropID_SaveTo to Host. SDK Error: 0x{err:X}");
                     throw new CanonSdkException($"Failed to set save location (PropID_SaveTo) to host. SDK Error: 0x{err:X}", err);
                 }
-                Console.WriteLine("Successfully set PropID_SaveTo to Host."); // Add success log
+                Console.WriteLine("Successfully set PropID_SaveTo to Host.");
 
                 EDSDKLib.EDSDK.EdsCapacity capacity = new EDSDKLib.EDSDK.EdsCapacity
                 {
-                    NumberOfFreeClusters = 0x7FFFFFFF, // Represents a very large capacity
-                    BytesPerSector = 0x1000,           // A common sector size
-                    Reset = 1                          // Resets the capacity logic on the camera for host
+                    NumberOfFreeClusters = 0x7FFFFFFF,
+                    BytesPerSector = 0x1000,
+                    Reset = 1
                 };
-
                 err = EDSDKLib.EDSDK.EdsSetCapacity(_cameraRef, capacity);
                 if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
                 {
                     Console.WriteLine($"CRITICAL ERROR: Failed to set capacity for host saving. SDK Error: 0x{err:X}");
                     throw new CanonSdkException($"Failed to set capacity for host saving. SDK Error: 0x{err:X}", err);
                 }
-                Console.WriteLine("Successfully set capacity for host saving."); // Add success log
+                Console.WriteLine("Successfully set capacity for host saving.");
             }
-            catch (CanonSdkException ex) // Catch specific SDK exception
+            catch (CanonSdkException ex)
             {
                 Console.WriteLine($"CanonSdkException in SetSaveToHost: {ex.Message} (SDK Error: 0x{ex.ErrorCode:X})");
-                // Decide if you want to re-throw or handle this as a critical failure
-                // For event-driven downloads, this IS critical.
                 throw;
             }
             catch (Exception ex)
@@ -160,109 +166,63 @@ namespace Canon.Sdk.Core
             }
         }
 
-        /// <summary>
-        /// Closes the session with the camera
-        /// </summary>
         public void CloseSession()
         {
-            uint err = EDSDKLib.EDSDK.EdsCloseSession(_cameraRef);
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero) return; // Sessie kan niet gesloten worden als er geen ref is
 
+            uint err = EDSDKLib.EDSDK.EdsCloseSession(_cameraRef);
             if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
             {
-                throw new CanonSdkException("Failed to close session with camera", err);
+                // Loggen is hier beter dan een harde throw, omdat dit vaak in Dispose wordt aangeroepen
+                Console.WriteLine($"Warning: Failed to close session with camera. SDK Error: 0x{err:X}");
+                // throw new CanonSdkException("Failed to close session with camera", err);
             }
         }
 
-        /// <summary>
-        /// Takes a picture with the camera
-        /// </summary>
-        // In Camera.cs
         public void TakePicture()
         {
-            Console.WriteLine("CAMERA.CS: Entering TakePicture using PressShutterButton sequence...");
-            uint err = EDSDKLib.EDSDK.EDS_ERR_OK;
-            uint releaseErr = EDSDKLib.EDSDK.EDS_ERR_OK;
-
+            Console.WriteLine("CAMERA.CS: Entering TakePicture using SendCommand sequence...");
             try
             {
-                // Press completely
-                Console.WriteLine("CAMERA.CS: Sending ShutterButton_Completely...");
-                err = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely);
-                Console.WriteLine($"CAMERA.CS: ShutterButton_Completely command returned 0x{err:X}");
-
-                if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-                {
-                    throw new CanonSdkException($"Failed to take picture (PressShutterButton Completely). SDK Error: 0x{err:X}", err);
-                }
+                Console.WriteLine("CAMERA.CS: Sending ShutterButton_Completely via SendCommand...");
+                SendCommand(EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely);
                 Console.WriteLine("CAMERA.CS: ShutterButton_Completely command successful.");
 
-                Thread.Sleep(500); // Small delay to avoid hogging CPU
+                Thread.Sleep(100); // Korte pauze, essentieel voor sommige camera's om het commando te verwerken
+                                   // voordat het release commando komt. 500ms was in je oude code, 100ms kan ook werken. Test dit.
             }
-            finally // Ensure OFF is sent even if Completely succeeds but subsequent code fails
+            finally
             {
-                // Release button (must be done)
-                Console.WriteLine("CAMERA.CS: Sending ShutterButton_OFF...");
-                releaseErr = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF);
-                Console.WriteLine($"CAMERA.CS: ShutterButton_OFF command returned 0x{releaseErr:X}");
-
-                if (releaseErr != EDSDKLib.EDSDK.EDS_ERR_OK && err == EDSDKLib.EDSDK.EDS_ERR_OK)
+                Console.WriteLine("CAMERA.CS: Sending ShutterButton_OFF via SendCommand...");
+                try
                 {
-                    // Only throw if the primary command succeeded but release failed,
-                    // otherwise prioritize the original error.
-                    // Or just log as a warning. For debugging, let's throw.
-                    throw new CanonSdkException($"Picture taken (?), but failed to send ShutterButton_OFF. SDK Error: 0x{releaseErr:X}", releaseErr);
-                }
-                else if (releaseErr != EDSDKLib.EDSDK.EDS_ERR_OK)
-                {
-                    Console.WriteLine($"WARNING: Original TakePicture command failed (0x{err:X}) AND ShutterButton_OFF failed (0x{releaseErr:X})");
-                }
-                else
-                {
+                    SendCommand(EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF);
                     Console.WriteLine("CAMERA.CS: ShutterButton_OFF command successful.");
+                }
+                catch (CanonSdkException ex)
+                {
+                    // Dit is problematisch als de knop "ingedrukt" blijft.
+                    Console.WriteLine($"CRITICAL: Failed to send ShutterButton_OFF after TakePicture. SDK Error: 0x{ex.ErrorCode:X} - {ex.Message}");
+                    // Overweeg hier verdere actie, hoewel de initiële foto mogelijk al genomen is.
                 }
             }
             Console.WriteLine("CAMERA.CS: Exiting TakePicture.");
         }
 
-        /// <summary>
-        /// Extends the camera's auto power-off timer.
-        /// </summary>
         public void ExtendShutdownTimer()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(Camera));
-            if (_cameraRef == IntPtr.Zero)
-                throw new InvalidOperationException("Camera reference is not valid (likely not connected or session not open).");
-
-            uint err = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, EDSDKLib.EDSDK.CameraCommand_ExtendShutDownTimer, 0);
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                // Gooi een exception of log een waarschuwing, afhankelijk van hoe kritiek je dit vindt.
-                // Console.WriteLine($"Warning: Failed to extend shutdown timer. SDK Error: 0x{err:X}");
-                throw new CanonSdkException("Failed to extend shutdown timer", err);
-            }
+            Console.WriteLine("CAMERA.CS: Extending shutdown timer via SendCommand...");
+            SendCommand(EDSDKLib.EDSDK.CameraCommand_ExtendShutDownTimer, 0);
+            Console.WriteLine("CAMERA.CS: ExtendShutdownTimer command sent.");
         }
 
-
         #region Abstracted Properties
+        // ... (ProductName, FirmwareVersion, BatteryLevel, IsEvfOutputToPcEnabled, IsFlashEnabled, ImageSaveDestination, AeMode, IsoSpeed, etc. blijven hetzelfde) ...
+        // Deze gebruiken GetProperty<T> en SetPropertyData<T> wat correct is voor properties.
 
-        /// <summary>
-        /// Gets the product name of the camera model.
-        /// Wraps EDSDK.PropID_ProductName.
-        /// </summary>
         public string ProductName => GetProperty<string>(EDSDK.PropID_ProductName);
-
-        /// <summary>
-        /// Gets the firmware version of the camera.
-        /// Wraps EDSDK.PropID_FirmwareVersion.
-        /// </summary>
         public string FirmwareVersion => GetProperty<string>(EDSDK.PropID_FirmwareVersion);
-
-        /// <summary>
-        /// Gets the current battery level as a percentage (approximately).
-        /// Returns -1 for AC power or if the level is unknown/unavailable.
-        /// Wraps EDSDK.PropID_BatteryLevel.
-        /// </summary>
         public int BatteryLevel
         {
             get
@@ -270,31 +230,21 @@ namespace Canon.Sdk.Core
                 try
                 {
                     uint batteryLevel = GetProperty<uint>(EDSDK.PropID_BatteryLevel);
-                    if (batteryLevel == EDSDK.BatteryLevel_AC) // Check for AC power
-                    {
-                        return -1; // Indicate AC power
-                    }
-                    // The SDK might return values slightly outside 0-100, clamp them.
+                    if (batteryLevel == EDSDK.BatteryLevel_AC) return -1;
                     return Math.Clamp((int)batteryLevel, 0, 100);
                 }
                 catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE)
                 {
-                    // Property might not be available (e.g., camera disconnected)
                     Console.WriteLine("Warning: Battery level property unavailable.");
-                    return -1; // Indicate unavailable
+                    return -1;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error getting BatteryLevel: {ex.Message}");
-                    return -1; // Indicate error
+                    return -1;
                 }
             }
         }
-
-        /// <summary>
-        /// Gets or sets whether the Electronic Viewfinder (EVF) output to the PC is enabled.
-        /// Wraps EDSDK.PropID_Evf_OutputDevice.
-        /// </summary>
         public bool IsEvfOutputToPcEnabled
         {
             get
@@ -305,36 +255,17 @@ namespace Canon.Sdk.Core
             set
             {
                 uint currentOutputDevice = GetProperty<uint>(EDSDK.PropID_Evf_OutputDevice);
-                uint newOutputDevice;
-
-                if (value)
-                {
-                    newOutputDevice = currentOutputDevice | EDSDK.EvfOutputDevice_PC; // Set the PC flag
-                }
-                else
-                {
-                    newOutputDevice = currentOutputDevice & ~EDSDK.EvfOutputDevice_PC; // Clear the PC flag
-                }
-
-                // Only set if the value actually changes
+                uint newOutputDevice = value ? (currentOutputDevice | EDSDK.EvfOutputDevice_PC) : (currentOutputDevice & ~EDSDK.EvfOutputDevice_PC);
                 if (newOutputDevice != currentOutputDevice)
                 {
                     SetPropertyData(EDSDK.PropID_Evf_OutputDevice, newOutputDevice);
                 }
             }
         }
-
-        /// <summary>
-        /// Gets or sets whether the camera's built-in flash is enabled (if applicable).
-        /// Note: This might control the *ability* to flash, not necessarily if it *will* flash (which depends on shooting mode, etc.).
-        /// Wraps EDSDK.PropID_FlashOn.
-        /// </summary>
         public bool IsFlashEnabled
         {
             get
             {
-                // Assuming FlashOn uses 0 for Off and 1 (or non-zero) for On.
-                // Adjust if the SDK uses different values.
                 try
                 {
                     uint flashStatus = GetProperty<uint>(EDSDK.PropID_FlashOn);
@@ -343,17 +274,16 @@ namespace Canon.Sdk.Core
                 catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || ex.ErrorCode == EDSDK.EDS_ERR_NOT_SUPPORTED)
                 {
                     Console.WriteLine($"Warning: FlashOn property unavailable or not supported (0x{ex.ErrorCode:X}). Returning false.");
-                    return false; // Default to false if not available/supported
+                    return false;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error getting IsFlashEnabled: {ex.Message}");
-                    return false; // Default to false on error
+                    return false;
                 }
             }
             set
             {
-                // Assuming 1 for On, 0 for Off.
                 uint flashValue = value ? 1u : 0u;
                 try
                 {
@@ -362,30 +292,19 @@ namespace Canon.Sdk.Core
                 catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || ex.ErrorCode == EDSDK.EDS_ERR_NOT_SUPPORTED)
                 {
                     Console.WriteLine($"Warning: Cannot set FlashOn property, it is unavailable or not supported (0x{ex.ErrorCode:X}).");
-                    // Optionally re-throw or just log
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error setting IsFlashEnabled: {ex.Message}");
-                    // Optionally re-throw
                 }
             }
         }
-
-        /// <summary>
-        /// Represents the destination for saving images.
-        /// </summary>
         public enum SaveDestination : uint
         {
             Camera = EDSDK.EdsSaveTo.Camera,
             Host = EDSDK.EdsSaveTo.Host,
             Both = EDSDK.EdsSaveTo.Both
         }
-
-        /// <summary>
-        /// Gets or sets where images are saved (Camera, Host PC, or Both).
-        /// Wraps EDSDK.PropID_SaveTo. Setting to Host or Both also sets capacity.
-        /// </summary>
         public SaveDestination ImageSaveDestination
         {
             get
@@ -397,70 +316,34 @@ namespace Canon.Sdk.Core
             {
                 uint saveToValue = (uint)value;
                 SetPropertyData(EDSDK.PropID_SaveTo, saveToValue);
-
-                // If saving to Host or Both, we need to inform the camera about the host capacity.
                 if (value == SaveDestination.Host || value == SaveDestination.Both)
                 {
-                    SetHostCapacity(); // Use a helper method
+                    SetHostCapacity();
                 }
             }
         }
-
-
-        /// <summary>
-        /// Gets the current Auto Exposure (AE) mode.
-        /// Wraps EDSDK.PropID_AEMode. Consider creating an enum for better usability.
-        /// </summary>
-        public uint AeMode => GetProperty<uint>(EDSDK.PropID_AEMode); // Consider returning an enum mapped from these values
-
-
-        /// <summary>
-        /// Gets the current ISO speed.
-        /// Wraps EDSDK.PropID_ISOSpeed.
-        /// </summary>
+        public uint AeMode => GetProperty<uint>(EDSDK.PropID_AEMode);
         public uint IsoSpeed => GetProperty<uint>(EDSDK.PropID_ISOSpeed);
-
-
-        /// <summary>
-        /// Gets the current Aperture Value (Av).
-        /// Wraps EDSDK.PropID_Av. You might want to map this uint to actual f-stop values using EdsGetPropertyDesc.
-        /// </summary>
         private uint ApertureValue => GetProperty<uint>(EDSDK.PropID_Av);
-
-
-        /// <summary>
-        /// Gets the current Shutter Speed (Tv).
-        /// Wraps EDSDK.PropID_Tv. You might want to map this uint to actual shutter speed strings (e.g., "1/100", "Bulb") using EdsGetPropertyDesc.
-        /// </summary>
         private uint ShutterSpeedValue => GetProperty<uint>(EDSDK.PropID_Tv);
-
-
-        /// <summary>
-        /// Gets the number of available shots based on current settings and storage capacity.
-        /// Wraps EDSDK.PropID_AvailableShots. Note: This reflects host capacity if SaveTo is Host/Both.
-        /// </summary>
         private uint AvailableShots => GetProperty<uint>(EDSDK.PropID_AvailableShots);
-
         #endregion
 
-
-        // Helper method to set host capacity (called by ImageSaveDestination setter)
         private void SetHostCapacity()
         {
+            // Blijft hetzelfde, gebruikt EdsSetCapacity direct
             try
             {
                 EDSDK.EdsCapacity capacity = new EDSDK.EdsCapacity
                 {
-                    NumberOfFreeClusters = 0x7FFFFFFF, // Indicate large capacity
-                    BytesPerSector = 0x1000,           // Common sector size
-                    Reset = 1                          // Reset camera's capacity calculation for host
+                    NumberOfFreeClusters = 0x7FFFFFFF,
+                    BytesPerSector = 0x1000,
+                    Reset = 1
                 };
-
                 uint err = EDSDK.EdsSetCapacity(_cameraRef, capacity);
-                if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_NOT_SUPPORTED) // Ignore NOT_SUPPORTED error
+                if (err != EDSDK.EDS_ERR_OK && err != EDSDK.EDS_ERR_NOT_SUPPORTED)
                 {
                     Console.WriteLine($"Warning: Failed to set capacity for host saving. SDK Error: 0x{err:X}");
-                    // Don't throw here, as setting SaveTo might still work partially
                 }
             }
             catch (Exception ex)
@@ -469,122 +352,58 @@ namespace Canon.Sdk.Core
             }
         }
 
-
-
-        /// <summary>
-        /// Sets a property event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        public void SetPropertyEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsPropertyEventHandler handler)
-        {
-            SetPropertyEventHandler(eventTypes, handler, IntPtr.Zero);
-        }
-
-        /// <summary>
-        /// Sets a property event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        /// <param name="context">User context data</param>
+        // Methoden voor SetPropertyEventHandler, SetObjectEventHandler, SetStateEventHandler blijven hetzelfde.
+        // Ze registreren de C# delegates bij de native SDK.
         public void SetPropertyEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsPropertyEventHandler handler, IntPtr context)
         {
             uint err = EDSDKLib.EDSDK.EdsSetPropertyEventHandler(_cameraRef, eventTypes, handler, context);
-
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set property event handler", err);
-            }
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set property event handler", err);
         }
-
-        /// <summary>
-        /// Sets an object event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        public void SetObjectEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsObjectEventHandler handler)
-        {
-            SetObjectEventHandler(eventTypes, handler, IntPtr.Zero);
-        }
-
-        /// <summary>
-        /// Sets an object event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        /// <param name="context">User context data</param>
         public void SetObjectEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsObjectEventHandler handler, IntPtr context)
         {
             uint err = EDSDKLib.EDSDK.EdsSetObjectEventHandler(_cameraRef, eventTypes, handler, context);
-
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set object event handler", err);
-            }
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set object event handler", err);
         }
-
-        /// <summary>
-        /// Sets a state event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        public void SetStateEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsStateEventHandler handler)
-        {
-            SetStateEventHandler(eventTypes, handler, IntPtr.Zero);
-        }
-
-        /// <summary>
-        /// Sets a state event handler for the camera
-        /// </summary>
-        /// <param name="eventTypes">Event types to listen for</param>
-        /// <param name="handler">The handler function</param>
-        /// <param name="context">User context data</param>
         public void SetStateEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsStateEventHandler handler, IntPtr context)
         {
             uint err = EDSDKLib.EDSDK.EdsSetCameraStateEventHandler(_cameraRef, eventTypes, handler, context);
-
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set state event handler", err);
-            }
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set state event handler", err);
         }
+        // Overloads zonder context
+        public void SetPropertyEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsPropertyEventHandler handler) => SetPropertyEventHandler(eventTypes, handler, GCHandle.ToIntPtr(_gcHandle));
+        public void SetObjectEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsObjectEventHandler handler) => SetObjectEventHandler(eventTypes, handler, GCHandle.ToIntPtr(_gcHandle));
+        public void SetStateEventHandler(uint eventTypes, EDSDKLib.EDSDK.EdsStateEventHandler handler) => SetStateEventHandler(eventTypes, handler, GCHandle.ToIntPtr(_gcHandle));
 
-        /// <summary>
-        /// Gets property data from the camera
-        /// </summary>
-        /// <typeparam name="T">The type of the property data</typeparam>
-        /// <param name="propId">The property ID</param>
-        /// <param name="param">Optional parameter</param>
-        /// <returns>The property data</returns>
-        /// TODO: changes this internal to private, only properties and methods should be exposed to the outside
+
+        // GetProperty<T> en SetPropertyData<T> blijven hetzelfde, deze zijn voor properties, niet commando's.
         internal T GetProperty<T>(uint propId, int param = 0)
         {
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
+
             EDSDKLib.EDSDK.EdsDataType dataType;
             int dataSize;
-
-            // Get the property size and data type
             uint err = EDSDKLib.EDSDK.EdsGetPropertySize(_cameraRef, propId, param, out dataType, out dataSize);
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to get property size for PropID 0x{propId:X}", err);
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to get property size", err);
-            }
-
-            // Get the property data based on the type
             object data;
-
-            if (typeof(T) == typeof(uint) || typeof(T) == typeof(int))
+            if (typeof(T) == typeof(uint) || typeof(T) == typeof(int)) // Gecombineerd voor eenvoud
             {
+                if (dataSize != Marshal.SizeOf(typeof(uint)) && dataSize != Marshal.SizeOf(typeof(int)))
+                    throw new CanonSdkException($"Data size mismatch for uint/int. Expected {Marshal.SizeOf(typeof(uint))} or {Marshal.SizeOf(typeof(int))}, got {dataSize}", EDSDK.EDS_ERR_PROPERTIES_MISMATCH);
                 uint uintData;
                 err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out uintData);
-                data = uintData;
+                data = (typeof(T) == typeof(int)) ? (object)Convert.ToInt32(uintData) : (object)uintData;
             }
             else if (typeof(T) == typeof(string))
             {
                 string stringData;
+                // dataSize voor string is niet altijd betrouwbaar van EdsGetPropertySize, gebruik een vaste buffer of dynamische allocatie.
+                // EdsGetPropertyData(string) in EDSDK.cs gebruikt al een vaste buffer (256).
                 err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out stringData);
                 data = stringData;
             }
+            // ... (andere type handlers voor EdsPoint, EdsRect, EdsSize, EdsFocusInfo, byte[])
             else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsPoint))
             {
                 EDSDKLib.EDSDK.EdsPoint pointData;
@@ -620,203 +439,122 @@ namespace Canon.Sdk.Core
                 throw new ArgumentException($"Unsupported property data type: {typeof(T).Name}");
             }
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to get property data", err);
-            }
-
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to get property data for PropID 0x{propId:X}", err);
             return (T)data;
         }
 
-        /// <summary>
-        /// Sets property data on the camera
-        /// </summary>
-        /// <typeparam name="T">The type of the property data</typeparam>
-        /// <param name="propId">The property ID</param>
-        /// <param name="data">The data to set</param>
-        /// <param name="param">Optional parameter</param>
         public void SetPropertyData<T>(uint propId, T data, int param = 0)
         {
-            uint err = EDSDKLib.EDSDK.EdsSetPropertyData(_cameraRef, propId, param, Marshal.SizeOf(data), data);
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set property data", err);
-            }
+            int size = Marshal.SizeOf(data);
+            uint err = EDSDKLib.EDSDK.EdsSetPropertyData(_cameraRef, propId, param, size, data);
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to set property data for PropID 0x{propId:X}", err);
         }
-
-        /// <summary>
-        /// Sets property data on the camera (byte array overload)
-        /// </summary>
-        /// <param name="propId">The property ID</param>
-        /// <param name="data">The data to set</param>
-        /// <param name="param">Optional parameter</param>
-        public void SetPropertyData(uint propId, byte[] data, int param = 0)
+        public void SetPropertyData(uint propId, byte[] data, int param = 0) // Overload for byte[]
         {
-            uint err = EDSDKLib.EDSDK.EdsSetPropertyData(_cameraRef, propId, param, data.Length, data);
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+            if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set property data", err);
-            }
+            uint err = EDSDKLib.EDSDK.EdsSetPropertyData(_cameraRef, propId, param, data.Length, data);
+            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to set byte[] property data for PropID 0x{propId:X}", err);
         }
 
-        #region Event Handlers
 
+        #region Event Handlers (Setup and Internal Callbacks)
         private void SetupEventHandlers()
         {
-            // Set up event handlers for property events
-            uint err = EDSDKLib.EDSDK.EdsSetPropertyEventHandler(
-                _cameraRef,
-                EDSDKLib.EDSDK.PropertyEvent_All,
-                _propertyEventHandler,
-                GCHandle.ToIntPtr(_gcHandle));
+            // Deze methode wordt aangeroepen in de constructor
+            uint err;
+            IntPtr contextPtr = GCHandle.ToIntPtr(_gcHandle); // Context voor de callbacks
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set property event handler", err);
-            }
+            err = EDSDKLib.EDSDK.EdsSetPropertyEventHandler(_cameraRef, EDSDK.PropertyEvent_All, _propertyEventHandler, contextPtr);
+            if (err != EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set property event handler", err);
 
-            // Set up event handlers for object events
-            err = EDSDKLib.EDSDK.EdsSetObjectEventHandler(
-                _cameraRef,
-                EDSDKLib.EDSDK.ObjectEvent_All,
-                _objectEventHandler,
-                GCHandle.ToIntPtr(_gcHandle));
+            err = EDSDKLib.EDSDK.EdsSetObjectEventHandler(_cameraRef, EDSDK.ObjectEvent_All, _objectEventHandler, contextPtr);
+            if (err != EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set object event handler", err);
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set object event handler", err);
-            }
-
-            // Set up event handlers for state events
-            err = EDSDKLib.EDSDK.EdsSetCameraStateEventHandler(
-                _cameraRef,
-                EDSDKLib.EDSDK.StateEvent_All,
-                _stateEventHandler,
-                GCHandle.ToIntPtr(_gcHandle));
-
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
-            {
-                throw new CanonSdkException("Failed to set state event handler", err);
-            }
+            err = EDSDKLib.EDSDK.EdsSetCameraStateEventHandler(_cameraRef, EDSDK.StateEvent_All, _stateEventHandler, contextPtr);
+            if (err != EDSDK.EDS_ERR_OK) throw new CanonSdkException("Failed to set state event handler", err);
         }
 
+        // Native -> Managed Callback Wrappers
         private uint HandlePropertyEvent(uint inEvent, uint inPropertyID, uint inParam, IntPtr inContext)
         {
+            // Haal het 'this' object terug uit de context als nodig, of roep direct het C# event aan.
+            // GCHandle currentHandle = GCHandle.FromIntPtr(inContext);
+            // Camera thisCamera = currentHandle.Target as Camera;
+            // if (thisCamera != null) { ... }
             try
             {
-                var eventArgs = new PropertyEventArgs(inEvent, inPropertyID, inParam);
-                PropertyChanged?.Invoke(this, eventArgs);
+                PropertyChanged?.Invoke(this, new PropertyEventArgs(inEvent, inPropertyID, inParam));
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in property event handler: {ex.Message}");
-            }
-            return EDSDKLib.EDSDK.EDS_ERR_OK;
+            catch (Exception ex) { Console.WriteLine($"Error in Camera.HandlePropertyEvent: {ex.Message}"); }
+            return EDSDK.EDS_ERR_OK;
         }
 
         private uint HandleObjectEvent(uint inEvent, IntPtr inRef, IntPtr inContext)
         {
-            Console.WriteLine($"CAMERA.CS: HandleObjectEvent received. Type: 0x{inEvent:X}. Is ObjectChanged null? {ObjectChanged == null}");
-            ObjectEventArgs eventArgs = null; // Initialize to null
+            Console.WriteLine($"CAMERA.CS: HandleObjectEvent received. Type: 0x{inEvent:X}, Ref: 0x{inRef.ToInt64():X}. ObjectChanged subscribers? {ObjectChanged != null}");
+            ObjectEventArgs eventArgs = new ObjectEventArgs(inEvent, inRef);
             try
             {
-                eventArgs = new ObjectEventArgs(inEvent, inRef); // Assign here
-                ObjectChanged?.Invoke(this, eventArgs);
+                ObjectChanged?.Invoke(this, eventArgs); // Roep het C# event aan
 
-                if (inEvent == EDSDKLib.EDSDK.ObjectEvent_DirItemRequestTransfer && !eventArgs.Handled)
+                // Als het event door de abonnee (CameraService) als afgehandeld is gemarkeerd
+                // (specifiek voor DirItemRequestTransfer), dan hoeven we de inRef hier niet vrij te geven.
+                if (eventArgs.Handled)
                 {
-                    Console.WriteLine($"CAMERA.CS: DirItemRequestTransfer detected. Calling HandleDownload.");
-                    eventArgs.Handled = true;
-                    _eventHandler.HandleDownload(inRef); // HandleDownload is responsible for EdsRelease(inRef)
-                    return EDSDKLib.EDSDK.EDS_ERR_OK; // Return because inRef is handled by HandleDownload
+                    Console.WriteLine($"CAMERA.CS: HandleObjectEvent (Ref: 0x{inRef.ToInt64():X}) was handled by subscriber. Not releasing here.");
+                    return EDSDK.EDS_ERR_OK;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in Camera.HandleObjectEvent: {ex.Message}");
-                // If an exception occurs, eventArgs might still be null or Handled might be false
+                Console.WriteLine($"Error invoking ObjectChanged event: {ex.Message}");
             }
-            finally // Use finally to ensure release if not handled
+            finally
             {
-                // Only release if inRef is valid AND it wasn't handled by HandleDownload path
-                // or if an exception occurred before eventArgs.Handled could be set.
-                if (inRef != IntPtr.Zero)
+                // Als inRef niet IntPtr.Zero is EN niet afgehandeld door een subscriber,
+                // dan moet de resource hier worden vrijgegeven om lekken te voorkomen.
+                if (inRef != IntPtr.Zero && !eventArgs.Handled)
                 {
-                    bool shouldRelease = true;
-                    if (eventArgs != null && eventArgs.Handled)
-                    {
-                        shouldRelease = false; // It was (or should have been) released by HandleDownload
-                    }
-
-                    if (shouldRelease)
-                    {
-                        Console.WriteLine($"CAMERA.CS: Releasing inRef (0x{inRef.ToInt64():X}) because it was not handled by DirItemRequestTransfer special path or an error occurred.");
-                        EDSDKLib.EDSDK.EdsRelease(inRef);
-                    }
+                    Console.WriteLine($"CAMERA.CS: Releasing inRef (0x{inRef.ToInt64():X}) in HandleObjectEvent as it was not marked as handled.");
+                    EDSDK.EdsRelease(inRef);
+                }
+                else if (inRef != IntPtr.Zero && eventArgs.Handled)
+                {
+                    Console.WriteLine($"CAMERA.CS: inRef (0x{inRef.ToInt64():X}) was marked handled, assuming subscriber released it.");
                 }
             }
-            return EDSDKLib.EDSDK.EDS_ERR_OK;
+            return EDSDK.EDS_ERR_OK;
         }
+
 
         private uint HandleStateEvent(uint inEvent, uint inParameter, IntPtr inContext)
         {
             try
             {
-                var eventArgs = new StateEventArgs(inEvent, inParameter);
-                StateChanged?.Invoke(this, eventArgs);
+                StateChanged?.Invoke(this, new StateEventArgs(inEvent, inParameter));
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in state event handler: {ex.Message}");
-            }
-            return EDSDKLib.EDSDK.EDS_ERR_OK;
+            catch (Exception ex) { Console.WriteLine($"Error in Camera.HandleStateEvent: {ex.Message}"); }
+            return EDSDK.EDS_ERR_OK;
         }
 
-        /// <summary>
-        /// Processes an object event from the camera
-        /// </summary>
-        /// <param name="eventType">The event type</param>
-        /// <param name="objectRef">Reference to the object</param>
-        internal void ProcessObjectEvent(uint eventType, IntPtr objectRef)
-        {
-
-            Console.WriteLine("ProcessObjectEvent called");
-
-            switch (eventType)
-            {
-                case EDSDKLib.EDSDK.ObjectEvent_DirItemRequestTransfer:
-                    _eventHandler.HandleDownload(objectRef);
-                    break;
-
-                default:
-                    // Release the object if we're not handling it
-                    if (objectRef != IntPtr.Zero)
-                    {
-                        EDSDKLib.EDSDK.EdsRelease(objectRef);
-                    }
-                    break;
-            }
-        }
+        // ProcessObjectEvent is niet langer nodig hier, de event handler _objectEventHandler
+        // en het C# event ObjectChanged doen het werk. De CameraService abonneert hierop.
+        // internal void ProcessObjectEvent(uint eventType, IntPtr objectRef) { ... }
 
         #endregion
 
         #region IDisposable Implementation
-
-        /// <summary>
-        /// Releases resources used by the camera
-        /// </summary>
         public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
 
-        /// <summary>
-        /// Releases resources used by the camera
-        /// </summary>
-        /// <param name="disposing">True if called from Dispose(), false if called from finalizer</param>
         protected virtual void Dispose(bool disposing)
         {
             if (!_disposed)
@@ -824,30 +562,49 @@ namespace Canon.Sdk.Core
                 if (disposing)
                 {
                     // Release managed resources
-                    // Unregister event handlers
-                    if (_cameraRef != IntPtr.Zero)
+                    // (bijv. events nullen als je geen strong references wilt houden)
+                    PropertyChanged = null;
+                    ObjectChanged = null;
+                    StateChanged = null;
+                    _eventHandler?.Dispose(); // _eventHandler class moet ook IDisposable zijn
+                    _eventHandler = null;
+                }
+
+                // Vrijgeven van native event handlers.
+                // Dit moet gebeuren VOORDAT de _cameraRef zelf wordt vrijgegeven of de sessie gesloten.
+                if (_cameraRef != IntPtr.Zero) // Controleer of er een valide referentie is
+                {
+                    // Probeer de sessie te sluiten als die nog open is.
+                    // Dit is een best-effort poging tijdens dispose.
+                    try { CloseSession(); } catch (Exception ex) { Console.WriteLine($"Exception during CloseSession in Dispose: {ex.Message}"); }
+
+                    // Deregistreer de handlers van de SDK
+                    // Dit is belangrijk om te voorkomen dat de SDK callbacks probeert aan te roepen
+                    // op een GCHandle die mogelijk al vrijgegeven is.
+                    try
                     {
-                        try
-                        {
-                            EDSDKLib.EDSDK.EdsSetPropertyEventHandler(_cameraRef, EDSDKLib.EDSDK.PropertyEvent_All, null, IntPtr.Zero);
-                            EDSDKLib.EDSDK.EdsSetObjectEventHandler(_cameraRef, EDSDKLib.EDSDK.ObjectEvent_All, null, IntPtr.Zero);
-                            EDSDKLib.EDSDK.EdsSetCameraStateEventHandler(_cameraRef, EDSDKLib.EDSDK.StateEvent_All, null, IntPtr.Zero);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error unregistering event handlers: {ex.Message}");
-                        }
+                        EDSDKLib.EDSDK.EdsSetPropertyEventHandler(_cameraRef, EDSDK.PropertyEvent_All, null, IntPtr.Zero);
+                        EDSDKLib.EDSDK.EdsSetObjectEventHandler(_cameraRef, EDSDK.ObjectEvent_All, null, IntPtr.Zero);
+                        EDSDKLib.EDSDK.EdsSetCameraStateEventHandler(_cameraRef, EDSDK.StateEvent_All, null, IntPtr.Zero);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error unregistering event handlers during Dispose: {ex.Message}");
                     }
                 }
 
+
                 // Free GCHandle
                 if (_gcHandle.IsAllocated)
+                {
                     _gcHandle.Free();
+                }
 
-                // Release unmanaged resources
+                // Release unmanaged camera reference
                 if (_cameraRef != IntPtr.Zero)
                 {
-                    EDSDKLib.EDSDK.EdsRelease(_cameraRef);
+                    uint releaseErr = EDSDKLib.EDSDK.EdsRelease(_cameraRef);
+                    if (releaseErr != EDSDK.EDS_ERR_OK) Console.WriteLine($"Warning: EdsRelease on cameraRef failed during Dispose: 0x{releaseErr:X}");
                     _cameraRef = IntPtr.Zero;
                 }
 
@@ -855,14 +612,10 @@ namespace Canon.Sdk.Core
             }
         }
 
-        /// <summary>
-        /// Finalizer
-        /// </summary>
         ~Camera()
         {
             Dispose(false);
         }
-
         #endregion
     }
 }
