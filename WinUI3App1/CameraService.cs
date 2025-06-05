@@ -320,11 +320,16 @@ namespace WinUI3App1
 
         private async Task HandleImageDownloadAsync(IntPtr dirItemRef)
         {
+
             if (dirItemRef == IntPtr.Zero)
             {
                 _logger.Error("CameraService: HandleImageDownloadAsync called with null dirItemRef.");
                 _captureTcs?.TrySetException(new ArgumentNullException(nameof(dirItemRef)));
                 return;
+            }
+            else
+            {
+                _logger.Verbose($"CameraService: HandleImageDownloadAsync called with dirItemRef of {dirItemRef}.");
             }
 
             string filePath = null; // Houd het pad bij voor logging, zelfs bij falen

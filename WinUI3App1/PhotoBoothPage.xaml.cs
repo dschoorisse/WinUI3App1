@@ -22,6 +22,7 @@ using Path = System.IO.Path;
 using Windows.Media.DialProtocol;
 using QRCoder;
 using Windows.Storage.Streams;
+using Canon.Sdk.Exceptions;
 
 namespace WinUI3App
 {
@@ -385,17 +386,81 @@ namespace WinUI3App
         // It also sends status updates over MQTT
         private async Task TakePhotoSimulation()
         {
+            string capturedImagePath = null; // Hier komt het pad naar de echte foto
+
             // Log the start of this photo simulation step, indicating which photo number this is (1-based)
             App.Logger.Information("TakePhotoSimulation: Starting photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
 
+            #region Take the actual photo with the camera
             // Set the application's current state to indicate a photo is being "taken"
             App.State = App.PhotoBoothState.TakingPhoto;
             App.Logger.Debug("TakePhotoSimulation: State set to TakingPhoto.");
+
+
+            // --- ECHTE FOTO CAPTURE ---
+            if (App.AppCameraService != null && App.AppCameraService.IsCameraAvailable)
+            {
+                try
+                {
+                    // Toon een "Bezig met foto maken..." bericht aan de gebruiker als je wilt
+                    // UpdateProgressIndicator(_photosTaken, true); // Geef aan dat we bezig zijn met deze foto
+
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Calling AppCameraService.CapturePhotoAsync().");
+                    // Geef een timeout mee als je wilt, anders gebruikt het de default in CameraService
+                    capturedImagePath = await App.AppCameraService.CapturePhotoAsync(TimeSpan.FromSeconds(25)); // Timeout van 25s
+
+                    if (!string.IsNullOrEmpty(capturedImagePath) && File.Exists(capturedImagePath))
+                    {
+                        App.Logger.Information("PhotoBoothPage.TakePhotoSimulation: Photo captured successfully. Path: {CapturedPath}", capturedImagePath);
+                    }
+                    else
+                    {
+                        App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CapturePhotoAsync returned null, empty, or non-existent path: {Path}", capturedImagePath);
+                        // Optioneel: val terug op een placeholder of toon een fout.
+                        // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
+                        // Voor nu, laat capturedImagePath null als het mislukt.
+                        capturedImagePath = null;
+                        // Toon een foutmelding aan de gebruiker via de UI.
+                        await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Kon de foto niet opslaan.");
+                    }
+                }
+                catch (TimeoutException tex)
+                {
+                    App.Logger.Error(tex, "PhotoBoothPage.TakePhotoSimulation: Timeout capturing photo.");
+                    capturedImagePath = null;
+                    await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Camera reageerde te traag.");
+                }
+                catch (CanonSdkException sdkEx)
+                {
+                    App.Logger.Error(sdkEx, "PhotoBoothPage.TakePhotoSimulation: SDK error capturing photo: {ErrorMessage} (0x{ErrorCode:X})", sdkEx.Message, sdkEx.ErrorCode);
+                    capturedImagePath = null;
+                    // Gebruik de CameraErrorOccurred event string als die relevant is, of een generieke.
+                    await ShowCaptureErrorDialogAsync("Camerafout", $"Technische fout: {sdkEx.Message}");
+                }
+                catch (Exception ex)
+                {
+                    App.Logger.Error(ex, "PhotoBoothPage.TakePhotoSimulation: Generic error capturing photo.");
+                    capturedImagePath = null;
+                    await ShowCaptureErrorDialogAsync("Fout", "Er is een onbekende fout opgetreden bij het maken van de foto.");
+                }
+            }
+            else
+            {
+                App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CameraService not available or camera not ready.");
+                // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
+                capturedImagePath = null;
+                await ShowCaptureErrorDialogAsync("Camera niet beschikbaar", "Controleer of de camera is aangesloten en probeer opnieuw.");
+            }
+            // --- EINDE ECHTE FOTO CAPTURE ---
+
 
             // Simulate a short delay for actual camera capture time
             App.Logger.Debug("TakePhotoSimulation: Simulating camera capture delay (100ms).");
             await Task.Delay(100); // In a real app, this would be your camera SDK's capture call.
             App.Logger.Debug("TakePhotoSimulation: Capture delay complete.");
+            #endregion
+
+            // TODO: download the photo from the camera
 
             // Add the path of the "taken" photo (currently a placeholder) to our list
             _photoPaths.Add(PLACEHOLDER_IMAGE_PATH);
@@ -480,6 +545,19 @@ namespace WinUI3App
             App.Logger.Debug("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
             await StartNextPhotoCapture();
             App.Logger.Debug("TakePhotoSimulation: StartNextPhotoCapture method finished.");
+        }
+        
+        // Helper methode voor foutdialogen (nieuw)
+        private async Task ShowCaptureErrorDialogAsync(string title, string content)
+        {
+            ContentDialog errorDialog = new ContentDialog
+            {
+                Title = title,
+                Content = content,
+                CloseButtonText = "Ok",
+                XamlRoot = this.XamlRoot // Belangrijk voor ContentDialog in WinUI3
+            };
+            await errorDialog.ShowAsync();
         }
 
         private async Task ShowAllPhotosForReview()
