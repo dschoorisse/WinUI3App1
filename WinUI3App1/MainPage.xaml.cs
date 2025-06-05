@@ -363,11 +363,27 @@ namespace WinUI3App
             Frame.Navigate(typeof(PhotoBoothPage));
         }
 
-        private void TestButton_Click(object sender, RoutedEventArgs e)
+        private async void TestButton_Click(object sender, RoutedEventArgs e)
         {
+
+            DebugTextBox.Visibility = Visibility.Visible;
+
             App.Logger?.Debug("MainPage: Test button clicked");
 
+            if (App.AppCameraService == null || !App.AppCameraService.IsCameraAvailable)
+            {
+                App.Logger?.Error("PhotoBoothPage: Camera is not available at the moment of taking a picture!");
+                // Toon fout op UI
+                DebugTextBox.Text += "Camerafout!"; // Tijdelijke melding
+                await Task.Delay(2000);
+                // Ga terug of probeer opnieuw? Voor nu, stop de procedure.
+                return;
+            }
 
+            // Neem de ECHTE foto
+            var capturedPhotoPath = await App.AppCameraService.CapturePhotoAsync(TimeSpan.FromSeconds(10));
+
+            /*
             App.Logger?.Debug("Initializing Canon SDK...");
             App.canonApi = new CanonAPI();
             App.canonApi.Initialize();
@@ -395,7 +411,7 @@ namespace WinUI3App
                 App.Logger?.Error("MainPage: No cameras found. Please connect a camera and try again.");
                 DebugTextBox.Text += "No cameras found. Please connect a camera and try again.\n";
             }
-
+            */
         }
 
         private void RecordVideoButton_Click(object sender, RoutedEventArgs e)
@@ -427,6 +443,7 @@ namespace WinUI3App
             }
         }
 
+        /*
         private void TestTakePictureTemp()
         {
             try
@@ -592,6 +609,7 @@ namespace WinUI3App
                 // Optional: Rethrow or handle more gracefully
             }
         }
+    */
     }
 
 

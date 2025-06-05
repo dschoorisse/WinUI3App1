@@ -19,10 +19,6 @@ using System.Text.Json.Serialization;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Dispatching;
 
-using Canon.Sdk.Core;
-using Canon.Sdk.Events;
-using Canon.Sdk.Exceptions;
-
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
 {
@@ -30,7 +26,12 @@ namespace WinUI3App1
     {
         public static Window MainWindow { get; private set; }
         public static ILogger Logger { get; private set; }
+
+        // Services
         public static MqttService MqttServiceInstance { get; private set; }
+        public static CameraService AppCameraService { get; private set; }
+        public static DnpStatusService DnpStatusMonitor { get; private set; }
+
         public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
 
         // Settings management
@@ -52,8 +53,7 @@ namespace WinUI3App1
         public static DateTime lastPreloadBackgroundUtc { get; set; }
         public static BitmapImage PreloadedBackgroundImage { get; private set; }
 
-        // For DNP Status Service
-        public static DnpStatusService DnpStatusMonitor { get; private set; }
+        // For DNP Status Service (TODO: can we enclose this inside the service?)
         public static PrinterStatusEventArgs LastKnownPrinterStatus { get; private set; }  // Om de laatste status vast te houden
         private static System.Diagnostics.Stopwatch _printingFinishedStopwatch = new System.Diagnostics.Stopwatch(); // Moet static zijn als methode static is
         private static string _previousPrinterStatusForLight; // Moet static zijn
@@ -68,14 +68,6 @@ namespace WinUI3App1
         private const string LIGHT_CMD_STANDBY = "STANDBY";
         private const string LIGHT_CMD_PRINTING = "PRINTING";
         private const string LIGHT_CMD_FINISHED = "FINISHED";
-
-        // Canon EDSDK 
-        public static CanonAPI canonApi;
-        public static bool cameraRunning = true;
-        public static Camera currentCamera;
-        public static object cameraLock = new object(); // For thread safety if OnCameraAdded is used
-        public static bool isCameraConnectedAndInitialized = false; // To prevent re-entry issues
-        public static CameraList cameraList;
 
         public App()
         {
@@ -126,6 +118,10 @@ namespace WinUI3App1
             ConfigureLogging(); // This will now have access to CurrentSettings and PhotoboothIdentifier
 
             Logger.Information("Application launching... Settings loaded. Photobooth ID: {PhotoboothId}", PhotoboothIdentifier);
+
+            // 3B. Initialize Camera Service (if applicable)
+            AppCameraService = new CameraService(Logger); // Pass the logger
+            await AppCameraService.InitializeAsync();
 
             // 4. Preload background image if specified
             //await PreloadBackgroundImageAsync();
@@ -781,6 +777,14 @@ namespace WinUI3App1
             DnpStatusMonitor?.Dispose();
             Logger?.Debug("DnpStatusService disposed on window close.");
             // --- End of DNP Status Monitoring Disposal ---
+
+            // NIEUW: Dispose CameraService
+            if (AppCameraService != null)
+            {
+                AppCameraService.Dispose();
+                AppCameraService = null;
+                Logger.Information("App: CameraService disposed on window close.");
+            }
 
             // --- Flush logs and close application ---
             Logger.Information("Flushing logs and closing application.");
