@@ -266,8 +266,13 @@ namespace WinUI3App1
                 {
                     _logger.Verbose("MQTT: Message published successfully to topic '{Topic}'.", topic);
                 }
+                else if (result.ReasonCode == MqttClientPublishReasonCode.NoMatchingSubscribers)
+                {
+                    _logger.Debug("MQTT: Message published to topic '{Topic}', but there were no matching subscribers.", topic);
+                }
                 else
                 {
+                    // Keep the error status for 'real' errors
                     _logger.Error("MQTT: Failed to publish message to topic '{Topic}'. Reason: {Reason}", topic, result.ReasonCode);
                 }
             }
