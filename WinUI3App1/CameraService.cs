@@ -359,7 +359,7 @@ namespace WinUI3App1
                         if (!Directory.Exists(configuredOutputPath))
                         {
                             _logger.Information("CameraService: Configured PhotoOutputPath '{Path}' does not exist, attempting to create it.", configuredOutputPath);
-                            Directory.CreateDirectory(configuredOutputPath); // Probeer de map aan te maken
+                            DirectoryInfo returnValue = Directory.CreateDirectory(configuredOutputPath); // Probeer de map aan te maken
                         }
                         finalSavePath = Path.Combine(configuredOutputPath, fileNameToUse);
                         useConfiguredPath = true;

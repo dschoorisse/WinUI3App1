@@ -163,7 +163,8 @@ namespace WinUI3App1
             MainWindow = new MainWindow();
             Logger.Debug("Main window created");
 
-            
+
+
 
 
             // Initialisation of DNP Status Service
@@ -294,19 +295,25 @@ namespace WinUI3App1
 
             #endregion
 
-            #region Canon SDK
-            //App.Logger?.Debug("Initializing Canon SDK...");
-            //canonApi = new CanonAPI();
-            //canonApi.Initialize();
-            //App.Logger?.Information("Initialized Canon SDK!");
+           #region Test output file accessibility
+            if (!string.IsNullOrEmpty(App.CurrentSettings?.PhotoOutputPath))
+            {
+                try
+                {
+                    if (!Directory.Exists(App.CurrentSettings?.PhotoOutputPath))
+                    {
+                        Logger.Information($"App: Configured PhotoOutputPath '{App.CurrentSettings?.PhotoOutputPath}' does not exist, attempting to create it.");
+                        Directory.CreateDirectory(App.CurrentSettings?.PhotoOutputPath); // Probeer de map aan te maken
+                    }
+                    Logger.Debug($"App: Attempting to create the configured PhotoOutputPath: {App.CurrentSettings?.PhotoOutputPath}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error(ex, $"App: Error creating or accessing configured PhotoOutputPath '{App.CurrentSettings?.PhotoOutputPath}'.");
 
-            //// Set the camera on added handler like in console application
-
-            //// Do the tests
-            //App.Logger?.Warning("Looking for cameras...");
-            //cameraList = canonApi.GetCameraList();
-            //App.Logger?.Warning($"Found {cameraList.Count} camera(s)");
-
+                    ShowErrorDialog($"Error creating or accessing configured PhotoOutputPath '{App.CurrentSettings?.PhotoOutputPath}'");
+                }
+            }
             #endregion
         }
 
@@ -1287,6 +1294,20 @@ namespace WinUI3App1
                 Logger?.Error(ex, "App Preloader: Failed to preload background image from {Path}", CurrentSettings.BackgroundImagePath);
                 PreloadedBackgroundImage = null;
             }
+        }
+
+        private void ShowErrorDialog(string errorMessage)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Error",
+                Content = errorMessage,
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = MainWindow.Content.XamlRoot // Ensure dialog is tied to the main window  
+            };
+
+            _ = dialog.ShowAsync();
         }
 
 
