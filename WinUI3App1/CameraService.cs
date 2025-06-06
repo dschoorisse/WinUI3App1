@@ -34,10 +34,17 @@ namespace WinUI3App1
         public bool IsCameraAvailable => _activeCamera != null && IsCameraSessionOpen;
         public bool IsCameraSessionOpen { get; private set; } = false;
 
+        public ObservableCameraState CurrentState { get; }
+
         public CameraService(ILogger logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _logger.Debug("CameraService: Constructor called.");
+
+
+            // Initialiseer het status object zodat het nooit null is.
+            _logger.Debug("CameraService: Initializing ObservableCameraState.");
+            CurrentState = new ObservableCameraState();
         }
 
         public async Task InitializeAsync()
@@ -230,6 +237,12 @@ namespace WinUI3App1
                 }
                 _logger.Information("CameraService: ImageSaveDestination is set to {SaveMode}", _activeCamera.ImageSaveDestination);
 
+                // Haal de volledige status op wanneer de camera verbindt
+                await UpdateAllStateAsync();
+                if (CurrentState != null)
+                { 
+                }
+                CurrentState.IsCameraConnected = true;
 
                 CameraReady?.Invoke(this, EventArgs.Empty);
             }
@@ -279,6 +292,9 @@ namespace WinUI3App1
                 }
                 finally
                 {
+
+                    ResetStateToDisconnected(); // Reset de status na disconnect
+
                     // De _activeCamera.Dispose() zou de native EdsRelease moeten aanroepen.
                     // Doe dit alleen als het object daadwerkelijk van deze service is en niet
                     // extern beheerd wordt. In dit geval is het van ons.
@@ -301,6 +317,76 @@ namespace WinUI3App1
                 }
             }
         }
+
+        private void ResetStateToDisconnected()
+        {
+            CurrentState.IsCameraConnected = false;
+            CurrentState.ModelName = "Not Connected";
+            CurrentState.BatteryLevel = 0;
+            CurrentState.AvailableShots = 0;
+            CurrentState.AeMode = AEMode.Unknown;
+            CurrentState.AfMode = AFMode.Unknown;
+            CurrentState.IsoSpeed = "N/A";
+            CurrentState.ExposureCompensation = "N/A";
+            CurrentState.ImageQuality = "N/A";
+            CurrentState.Orientation = "N/A";
+            CurrentState.FocalLength = "N/A";
+            CurrentState.IsFocused = false;
+            CurrentState.IsFlashOn = false;
+            CurrentState.FlashMode = "N/A";
+            CurrentState.IsLiveViewActive = false;
+            CurrentState.IsRecordingMovie = false;
+        }
+
+        // NIEUW: Methode om alle properties in één keer te updaten
+        public async Task UpdateAllStateAsync()
+        {
+            if (!IsCameraAvailable)
+            {
+                ResetStateToDisconnected();
+                return;
+            }
+
+            _logger.Information("CameraService: Refreshing all camera state properties...");
+            await Task.Run(() =>
+            {
+                // THis method seems to be hit when CameraState is null which causes an exception
+                if (CurrentState != null)
+                {
+
+                    try
+                    {
+                        CurrentState.ModelName = _activeCamera.ProductName;
+                        CurrentState.BatteryLevel = _activeCamera.BatteryLevel;
+                        CurrentState.AvailableShots = _activeCamera.AvailableShots;
+                        CurrentState.AeMode = (AEMode)_activeCamera.AEMode;
+                        CurrentState.AfMode = (AFMode)_activeCamera.AFMode;
+                        CurrentState.IsoSpeed = _activeCamera.ISOSpeed.ToString(); // Vereist vertaling voor leesbaarheid
+                        CurrentState.ExposureCompensation = _activeCamera.ExposureCompensation.ToString("X"); // Vereist vertaling
+                        CurrentState.ImageQuality = _activeCamera.ImageQuality.ToString("X"); // Vereist vertaling
+                        CurrentState.Orientation = _activeCamera.Orientation.ToString();
+                        CurrentState.IsFlashOn = _activeCamera.IsFlashOn;
+                        CurrentState.FlashMode = _activeCamera.FlashMode.ToString("X");
+                        CurrentState.IsLiveViewActive = _activeCamera.IsLiveViewActive;
+                        CurrentState.IsRecordingMovie = _activeCamera.RecordState != 0;
+
+                        var focal = _activeCamera.FocalLength;
+                        CurrentState.FocalLength = focal.Denominator > 0 ? $"{focal.Numerator / focal.Denominator}mm" : "N/A";
+
+                        var focusInfo = _activeCamera.FocusInfo;
+                        CurrentState.IsFocused = focusInfo.focusPoint.Any(p => p.justFocus == 1);
+
+                        _logger.Information("CameraService: State refreshed for {Model}. Battery: {Batt}%, Shots: {Shots}", CurrentState.ModelName, CurrentState.BatteryLevel, CurrentState.AvailableShots);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, "Failed to update all camera state.");
+                        ResetStateToDisconnected();
+                    }
+                }
+            });
+        }
+
 
         private void OnSdkObjectEventReceived(object sender, ObjectEventArgs e)
         {
@@ -495,14 +581,69 @@ namespace WinUI3App1
             }
         }
 
-        private void OnSdkPropertyEventReceived(object sender, PropertyEventArgs e)
+        private async void OnSdkPropertyEventReceived(object sender, PropertyEventArgs e)
         {
-            _logger.Debug("CameraService: OnSdkPropertyEventReceived: Type=0x{EventType:X}, ID=0x{PropertyId:X}, Param=0x{Param:X}", e.EventType, e.PropertyId, e.Parameter);
-            if (e.PropertyId == EDSDK.PropID_Unknown) // 0x0000ffff
+            _logger.Debug("CameraService: OnSdkPropertyEventReceived: ID=0x{PropertyId:X}", e.PropertyId);
+
+            // Update alleen de specifieke property die is veranderd
+            // Dit is efficiënter dan alles opnieuw op te halen
+            if (!IsCameraAvailable) return;
+
+            try
             {
-                _logger.Warning("CameraService: PropertyEvent with Unknown PropertyID. Consider re-querying relevant properties if UI depends on them.");
+                Action updateAction = null;
+                switch (e.PropertyId)
+                {
+                    case EDSDK.PropID_BatteryLevel:
+                        updateAction = () => CurrentState.BatteryLevel = _activeCamera.BatteryLevel;
+                        break;
+                    case EDSDK.PropID_AvailableShots:
+                        updateAction = () => CurrentState.AvailableShots = _activeCamera.AvailableShots;
+                        break;
+                    case EDSDK.PropID_AEMode:
+                        updateAction = () => CurrentState.AeMode = (AEMode)_activeCamera.AEMode;
+                        break;
+                    case EDSDK.PropID_ImageQuality:
+                        updateAction = () => CurrentState.ImageQuality = _activeCamera.ImageQuality.ToString("X");
+                        break;
+                    case EDSDK.PropID_ISOSpeed:
+                        updateAction = () => CurrentState.IsoSpeed = _activeCamera.ISOSpeed.ToString();
+                        break;
+                    case EDSDK.PropID_AFMode:
+                        updateAction = () => CurrentState.AfMode = (AFMode)_activeCamera.AFMode;
+                        break;
+                    case EDSDK.PropID_ExposureCompensation:
+                        updateAction = () => CurrentState.ExposureCompensation = _activeCamera.ExposureCompensation.ToString("X");
+                        break;
+                    case EDSDK.PropID_FlashOn:
+                        updateAction = () => CurrentState.IsFlashOn = _activeCamera.IsFlashOn;
+                        break;
+                    case EDSDK.PropID_Evf_OutputDevice:
+                        updateAction = () => CurrentState.IsLiveViewActive = _activeCamera.IsLiveViewActive;
+                        break;
+                    case EDSDK.PropID_Record:
+                        updateAction = () => CurrentState.IsRecordingMovie = _activeCamera.RecordState != 0;
+                        break;
+                    case EDSDK.PropID_FocusInfo:
+                        updateAction = () => CurrentState.IsFocused = _activeCamera.FocusInfo.focusPoint.Any(p => p.justFocus == 1);
+                        break;
+                    case EDSDK.PropID_Unknown:
+                        _logger.Warning("Received 'Unknown' PropertyChanged event. Refreshing all properties.");
+                        await UpdateAllStateAsync();
+                        break;
+                }
+
+                if (updateAction != null)
+                {
+                    // Voer de update uit op een achtergrond thread om de event-handler niet te blokkeren
+                    await Task.Run(updateAction);
+                    _logger.Debug("Camera state updated via event for property 0x{PropertyId:X}", e.PropertyId);
+                }
             }
-            // Je kunt hier specifieke properties afhandelen als dat nodig is voor de UI.
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Error handling property changed event for ID 0x{PropertyId:X}", e.PropertyId);
+            }
         }
 
         public async Task<string> CapturePhotoAsync(TimeSpan? timeout = null)

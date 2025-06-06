@@ -217,6 +217,26 @@ namespace Canon.Sdk.Core
             Console.WriteLine("CAMERA.CS: ExtendShutdownTimer command sent.");
         }
 
+        public void SyncClock()
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(Camera));
+
+            DateTime now = DateTime.Now;
+            EDSDK.EdsTime edsTime = new EDSDK.EdsTime
+            {
+                Year = now.Year,
+                Month = now.Month,
+                Day = now.Day,
+                Hour = now.Hour,
+                Minute = now.Minute,
+                Second = now.Second,
+                Milliseconds = 0 // Milliseconden worden meestal niet ondersteund
+            };
+
+            // Gebruik SetPropertyData met de EdsTime struct
+            SetPropertyData(EDSDK.PropID_DateTime, edsTime);
+        }
+
         #region Abstracted Properties
         // ... (ProductName, FirmwareVersion, BatteryLevel, IsEvfOutputToPcEnabled, IsFlashEnabled, ImageSaveDestination, AeMode, IsoSpeed, etc. blijven hetzelfde) ...
         // Deze gebruiken GetProperty<T> en SetPropertyData<T> wat correct is voor properties.
@@ -324,9 +344,45 @@ namespace Canon.Sdk.Core
         }
         public uint AeMode => GetProperty<uint>(EDSDK.PropID_AEMode);
         public uint IsoSpeed => GetProperty<uint>(EDSDK.PropID_ISOSpeed);
-        private uint ApertureValue => GetProperty<uint>(EDSDK.PropID_Av);
-        private uint ShutterSpeedValue => GetProperty<uint>(EDSDK.PropID_Tv);
-        private uint AvailableShots => GetProperty<uint>(EDSDK.PropID_AvailableShots);
+        public uint ApertureValue => GetProperty<uint>(EDSDK.PropID_Av);
+        public uint ShutterSpeedValue => GetProperty<uint>(EDSDK.PropID_Tv);
+        public uint AvailableShots => GetProperty<uint>(EDSDK.PropID_AvailableShots);
+        public uint ImageQuality => GetProperty<uint>(EDSDK.PropID_ImageQuality);
+
+        // Nieuw toegevoegde properties
+        public uint Orientation => GetProperty<uint>(EDSDK.PropID_Orientation);
+        public EDSDK.EdsFocusInfo FocusInfo => GetProperty<EDSDK.EdsFocusInfo>(EDSDK.PropID_FocusInfo);
+        public uint AEMode => GetProperty<uint>(EDSDK.PropID_AEMode);
+        public uint ISOSpeed => GetProperty<uint>(EDSDK.PropID_ISOSpeed);
+        public uint AFMode => GetProperty<uint>(EDSDK.PropID_AFMode);
+        public uint ExposureCompensation => GetProperty<uint>(EDSDK.PropID_ExposureCompensation);
+        public EDSDK.EdsRational FocalLength => GetProperty<EDSDK.EdsRational>(EDSDK.PropID_FocalLength);
+        public bool IsFlashOn => GetProperty<uint>(EDSDK.PropID_FlashOn) == 1;
+        public uint FlashMode => GetProperty<uint>(EDSDK.PropID_FlashMode);
+        public uint Evf_OutputDevice
+        {
+            get => GetProperty<uint>(EDSDK.PropID_Evf_OutputDevice);
+            set => SetPropertyData(EDSDK.PropID_Evf_OutputDevice, value);
+        }
+        public bool IsLiveViewActive
+        {
+            get => (Evf_OutputDevice & EDSDK.EvfOutputDevice_PC) != 0;
+            set
+            {
+                uint currentDevice = Evf_OutputDevice;
+                uint newDevice = value ? (currentDevice | EDSDK.EvfOutputDevice_PC) : (currentDevice & ~EDSDK.EvfOutputDevice_PC);
+                if (currentDevice != newDevice) Evf_OutputDevice = newDevice;
+            }
+        }
+        public uint Evf_Mode
+        {
+            get => GetProperty<uint>(EDSDK.PropID_Evf_Mode);
+            set => SetPropertyData(EDSDK.PropID_Evf_Mode, value);
+        }
+        public uint Evf_AFMode => GetProperty<uint>(EDSDK.PropID_Evf_AFMode);
+        public uint RecordState => GetProperty<uint>(EDSDK.PropID_Record);
+
+
         #endregion
 
         private void SetHostCapacity()
@@ -617,5 +673,13 @@ namespace Canon.Sdk.Core
             Dispose(false);
         }
         #endregion
+    }
+
+    // Voeg deze enum definitie toe binnen de namespace maar buiten de Camera klasse
+    public enum SaveDestination : uint
+    {
+        Camera = EDSDK.EdsSaveTo.Camera,
+        Host = EDSDK.EdsSaveTo.Host,
+        Both = EDSDK.EdsSaveTo.Both
     }
 }
