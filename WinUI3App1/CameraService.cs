@@ -21,12 +21,14 @@ namespace WinUI3App1
         private readonly ILogger _logger;
         private bool _isSdkInitialized = false;
         private bool _isDisposed = false;
+        private LiveViewManager _liveViewManager;
 
         public event EventHandler CameraReady;
         public event EventHandler CameraConnectionFailed;
         public event EventHandler CameraDisconnected;
         public event EventHandler<string> CameraErrorOccurred;
         public event EventHandler<string> PhotoSuccessfullyTakenAndDownloaded;
+        public event EventHandler<LiveViewFrameEventArgs> LiveViewFrameReady;
 
         private TaskCompletionSource<string> _captureTcs;
         private CancellationTokenSource _captureTimeoutCts; // Voor timeout van de capture operatie
@@ -230,6 +232,12 @@ namespace WinUI3App1
                 _activeCamera.PropertyChanged += OnSdkPropertyEventReceived;
                 _logger.Debug("CameraService: Subscribed to camera events.");
 
+                // Initialiseer de LiveViewManager voor deze camera
+                _logger.Information("CameraService: Initializing LiveViewManager for {CameraName}.", _activeCamera.DeviceInfo.DeviceDescription);
+                _liveViewManager = new LiveViewManager(_activeCamera);
+                _liveViewManager.FrameCaptured += OnLiveViewFrameCaptured;
+
+
                 // Controleer en stel ImageSaveDestination in. De property in Camera.cs doet dit al.
                 if (_activeCamera.ImageSaveDestination != Camera.SaveDestination.Host)
                 {
@@ -264,6 +272,58 @@ namespace WinUI3App1
             }
         }
 
+        private void OnLiveViewFrameCaptured(object sender, LiveViewFrameEventArgs e)
+        {
+            LiveViewFrameReady?.Invoke(this, e);
+        }
+
+        public Task StartLiveViewAsync()
+        {
+            if (_isDisposed || !IsCameraAvailable)
+            {
+                _logger.Error("CameraService: Cannot start live view, service is disposed or camera is not available.");
+                return Task.CompletedTask;
+            }
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    _logger.Information("CameraService: Starting Live View...");
+                    _liveViewManager?.StartLiveView();
+                    CurrentState.IsLiveViewActive = true;
+                    _logger.Information("CameraService: Live View started successfully.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "CameraService: Failed to start live view.");
+                    CameraErrorOccurred?.Invoke(this, $"Live View Start Error: {ex.Message}");
+                }
+            });
+        }
+
+        public Task StopLiveViewAsync()
+        {
+            if (_isDisposed) return Task.CompletedTask;
+            if (_liveViewManager == null) return Task.CompletedTask;
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    _logger.Information("CameraService: Stopping Live View...");
+                    _liveViewManager?.StopLiveView();
+                    CurrentState.IsLiveViewActive = false;
+                    _logger.Information("CameraService: Live View stopped successfully.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "CameraService: Failed to stop live view.");
+                    // Don't bubble up UI error on stop, as it's often part of cleanup.
+                }
+            });
+        }
+
         private async Task DisconnectActiveCameraAsync(bool notifyUI = true)
         {
             if (_isDisposed) return;
@@ -272,6 +332,17 @@ namespace WinUI3App1
                 string camName = _activeCamera.DeviceInfo?.DeviceDescription ?? "Unknown Camera";
                 _logger.Information("CameraService: Disconnecting from active camera: {CameraName}", camName);
                 IsCameraSessionOpen = false;
+
+                // Stop live view if it's active
+                if (_liveViewManager != null)
+                {
+                    _logger.Debug("CameraService: Disposing LiveViewManager during camera disconnect.");
+                    _liveViewManager.FrameCaptured -= OnLiveViewFrameCaptured;
+                    await StopLiveViewAsync(); // Ensure it's stopped
+                    _liveViewManager.Dispose();
+                    _liveViewManager = null;
+                }
+
                 try
                 {
                     _activeCamera.ObjectChanged -= OnSdkObjectEventReceived;

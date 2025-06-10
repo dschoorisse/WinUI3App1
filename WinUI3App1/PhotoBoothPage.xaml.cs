@@ -23,6 +23,8 @@ using Windows.Media.DialProtocol;
 using QRCoder;
 using Windows.Storage.Streams;
 using Canon.Sdk.Exceptions;
+using Canon.Sdk.Core;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace WinUI3App
 {
@@ -114,7 +116,45 @@ namespace WinUI3App
             }
             #endregion
 
+            // Start the live preview
+            if (App.AppCameraService != null)
+            {
+                App.Logger?.Information("PhotoBoothPage: Subscribing to LiveViewFrameReady event.");
+                App.AppCameraService.LiveViewFrameReady += OnLiveViewFrameReady;
+                await App.AppCameraService.StartLiveViewAsync();
+            }
+
             await StartPhotoProcedure();
+        }
+
+        private void OnLiveViewFrameReady(object sender, LiveViewFrameEventArgs e)
+        {
+            App.Logger?.Verbose("PhotoBoothPage: LiveViewFrameReady event received.");
+
+            if (e.ImageData == null || e.ImageData.Length == 0) return;
+
+            // Ensure update is on the UI thread
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                try
+                {
+                    using (var ms = new InMemoryRandomAccessStream())
+                    {
+                        await ms.WriteAsync(e.ImageData.AsBuffer());
+                        ms.Seek(0);
+
+                        var bmp = new BitmapImage();
+                        await bmp.SetSourceAsync(ms);
+
+                        // Use the existing CameraPlaceholderImage to display the live feed.
+                        CameraPlaceholderImage.Source = bmp;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    App.Logger?.Error(ex, "Failed to update live view image.");
+                }
+            });
         }
 
         // This happens before the _Loaded event, but the UI tree is not yet fully ready
@@ -124,6 +164,16 @@ namespace WinUI3App
             App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
         }
 
+        protected override async void OnNavigatedFrom(NavigationEventArgs e)
+        {
+            base.OnNavigatedFrom(e);
+            if (App.AppCameraService != null)
+            {
+                App.Logger?.Information("PhotoBoothPage: Navigating away. Unsubscribing and stopping live view.");
+                App.AppCameraService.LiveViewFrameReady -= OnLiveViewFrameReady;
+                await App.AppCameraService.StopLiveViewAsync();
+            }
+        }
 
         // Method to load configurable texts
         private void LoadConfigurableTexts()
@@ -403,6 +453,14 @@ namespace WinUI3App
             {
                 try
                 {
+                    // 1. STOP THE LIVE VIEW
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Stopping live view for photo capture.");
+                    await App.AppCameraService.StopLiveViewAsync();
+
+                    // It can be beneficial to add a small delay to allow the camera to fully switch modes
+                    await Task.Delay(100); // 100ms delay
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Live view stopped, ready to capture photo.");
+
                     // Toon een "Bezig met foto maken..." bericht aan de gebruiker als je wilt
                     // UpdateProgressIndicator(_photosTaken, true); // Geef aan dat we bezig zijn met deze foto
 
@@ -447,6 +505,8 @@ namespace WinUI3App
             }
             else
             {
+                // TODO: show an error in the UI
+
                 App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CameraService not available or camera not ready.");
                 // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
                 capturedImagePath = null;

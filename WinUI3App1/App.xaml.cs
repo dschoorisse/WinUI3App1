@@ -564,8 +564,8 @@ namespace WinUI3App1
                       currentStatusArgs.Status == PrinterStatuses.PaperJam ||         //
                       currentStatusArgs.Status.Contains("ERR", StringComparison.OrdinalIgnoreCase))) // Generic error check
             {
-                Logger?.Warning("ControlPrinterLight: Printer error state ({Status}). Light to STANDBY/ERROR.", currentStatusArgs.Status);
-                newDesiredLightState = LIGHT_CMD_STANDBY; // Or a specific "ERROR_PRINTER_ISSUE" command
+                Logger?.Warning("ControlPrinterLight: Printer error state ({Status}). Light to STANDBY.", currentStatusArgs.Status);
+                newDesiredLightState = LIGHT_CMD_STANDBY;
                 _printerLightFinishedToStandbyTimer.Stop();
             }
             else // Default to STANDBY for other unknown/unhandled states or if printing is disabled
