@@ -866,7 +866,7 @@ namespace WinUI3App
                         OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Uploading...";
                         App.State = App.PhotoBoothState.Uploading;
                         string prefix = $"{DateTime.UtcNow:yyyyMMdd}";
-                        string objectKeyStrip = $"strips/{prefix}/{uniqueFileId}.{Path.GetExtension(finalPhotoStripPathOnDisk)}";
+                        string objectKeyStrip = $"strips/{prefix}/{uniqueFileId}{Path.GetExtension(finalPhotoStripPathOnDisk)}";
                         App.Logger?.Information("PhotoBoothPage: Attempting to upload photostrip to S3/MinIO with key: {ObjectKey}", objectKeyStrip);
 
                         // TODO: check if this can raise exceptions that needs to be caught
