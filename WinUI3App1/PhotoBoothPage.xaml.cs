@@ -116,13 +116,7 @@ namespace WinUI3App
             }
             #endregion
 
-            // Start the live preview
-            if (App.AppCameraService != null)
-            {
-                App.Logger?.Information("PhotoBoothPage: Subscribing to LiveViewFrameReady event.");
-                App.AppCameraService.LiveViewFrameReady += OnLiveViewFrameReady;
-                await App.AppCameraService.StartLiveViewAsync();
-            }
+            
 
             await StartPhotoProcedure();
         }
@@ -140,14 +134,22 @@ namespace WinUI3App
                 {
                     using (var ms = new InMemoryRandomAccessStream())
                     {
-                        await ms.WriteAsync(e.ImageData.AsBuffer());
-                        ms.Seek(0);
+                        if (CameraPlaceholderImage != null)
+                        {
 
-                        var bmp = new BitmapImage();
-                        await bmp.SetSourceAsync(ms);
+                            await ms.WriteAsync(e.ImageData.AsBuffer());
+                            ms.Seek(0);
 
-                        // Use the existing CameraPlaceholderImage to display the live feed.
-                        CameraPlaceholderImage.Source = bmp;
+                            var bmp = new BitmapImage();
+                            await bmp.SetSourceAsync(ms);
+
+                            // Use the existing CameraPlaceholderImage to display the live feed.
+                            CameraPlaceholderImage.Source = bmp;
+                        }
+                        else
+                        {
+                            App.Logger?.Warning($"Cannot write live image to CameraPlaceholderImage because it is still null");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -162,6 +164,14 @@ namespace WinUI3App
         {
             base.OnNavigatedTo(e);
             App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
+
+            // Start the live preview
+            if (App.AppCameraService != null)
+            {
+                App.Logger?.Information("PhotoBoothPage: Subscribing to LiveViewFrameReady event.");
+                App.AppCameraService.LiveViewFrameReady += OnLiveViewFrameReady;
+                await App.AppCameraService.StartLiveViewAsync();
+            }
         }
 
         protected override async void OnNavigatedFrom(NavigationEventArgs e)
