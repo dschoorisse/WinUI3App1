@@ -605,7 +605,7 @@ namespace WinUI3App1
 
         private async void OnSdkStateEventReceived(object sender, StateEventArgs e)
         {
-            _logger.Information("CameraService: OnSdkStateEventReceived: Type=0x{EventType:X}, Param=0x{Param:X}", e.EventType, e.Parameter);
+            _logger.Debug("CameraService: OnSdkStateEventReceived: Type=0x{EventType:X}, Param=0x{Param:X}", e.EventType, e.Parameter);
             if (e.EventType == EDSDK.StateEvent_Shutdown)
             {
                 _logger.Warning("CameraService: Camera shutdown event (StateEvent_Shutdown) received!");
