@@ -437,65 +437,91 @@ namespace Canon.Sdk.Core
             if (_disposed) throw new ObjectDisposedException(nameof(Camera));
             if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
 
+            // --- Error handling for GetPropertySize ---
             EDSDKLib.EDSDK.EdsDataType dataType;
             int dataSize;
             uint err = EDSDKLib.EDSDK.EdsGetPropertySize(_cameraRef, propId, param, out dataType, out dataSize);
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to get property size for PropID 0x{propId:X}", err);
+
+            // Catch specific, non critical errors here. Sometimes a property simply does not exists for the camera
+            if (err == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || err == EDSDK.EDS_ERR_NOT_SUPPORTED)
+            {
+                // Log een waarschuwing in plaats van te crashen.
+                Console.WriteLine($"Warning: Property 0x{propId:X} is not available or supported. Returning default value for type {typeof(T).Name}.");
+                return default(T); // Retourneer de standaardwaarde (0, null, etc.)
+            }
+            // Gooi wel een exceptie voor andere, onverwachte fouten.
+            if (err != EDSDK.EDS_ERR_OK)
+            {
+                throw new CanonSdkException($"Failed to get property size for PropID 0x{propId:X}", err);
+            }
 
             object data;
-            if (typeof(T) == typeof(uint) || typeof(T) == typeof(int)) // Gecombineerd voor eenvoud
+            try
             {
-                if (dataSize != Marshal.SizeOf(typeof(uint)) && dataSize != Marshal.SizeOf(typeof(int)))
-                    throw new CanonSdkException($"Data size mismatch for uint/int. Expected {Marshal.SizeOf(typeof(uint))} or {Marshal.SizeOf(typeof(int))}, got {dataSize}", EDSDK.EDS_ERR_PROPERTIES_MISMATCH);
-                uint uintData;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out uintData);
-                data = (typeof(T) == typeof(int)) ? (object)Convert.ToInt32(uintData) : (object)uintData;
+                if (typeof(T) == typeof(uint) || typeof(T) == typeof(int)) // Gecombineerd voor eenvoud
+                {
+                    if (dataSize != Marshal.SizeOf(typeof(uint)) && dataSize != Marshal.SizeOf(typeof(int)))
+                        throw new CanonSdkException($"Data size mismatch for uint/int. Expected {Marshal.SizeOf(typeof(uint))} or {Marshal.SizeOf(typeof(int))}, got {dataSize}", EDSDK.EDS_ERR_PROPERTIES_MISMATCH);
+                    uint uintData;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out uintData);
+                    data = (typeof(T) == typeof(int)) ? (object)Convert.ToInt32(uintData) : (object)uintData;
+                }
+                else if (typeof(T) == typeof(string))
+                {
+                    string stringData;
+                    // dataSize voor string is niet altijd betrouwbaar van EdsGetPropertySize, gebruik een vaste buffer of dynamische allocatie.
+                    // EdsGetPropertyData(string) in EDSDK.cs gebruikt al een vaste buffer (256).
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out stringData);
+                    data = stringData;
+                }
+                // ... (andere type handlers voor EdsPoint, EdsRect, EdsSize, EdsFocusInfo, byte[])
+                else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsPoint))
+                {
+                    EDSDKLib.EDSDK.EdsPoint pointData;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out pointData);
+                    data = pointData;
+                }
+                else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsRect))
+                {
+                    EDSDKLib.EDSDK.EdsRect rectData;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out rectData);
+                    data = rectData;
+                }
+                else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsSize))
+                {
+                    EDSDKLib.EDSDK.EdsSize sizeData;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out sizeData);
+                    data = sizeData;
+                }
+                else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsFocusInfo))
+                {
+                    EDSDKLib.EDSDK.EdsFocusInfo focusInfo;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out focusInfo);
+                    data = focusInfo;
+                }
+                else if (typeof(T) == typeof(byte[]))
+                {
+                    byte[] bytesData;
+                    err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out bytesData);
+                    data = bytesData;
+                }
+                else
+                {
+                    throw new ArgumentException($"Unsupported property data type: {typeof(T).Name}");
+                }
             }
-            else if (typeof(T) == typeof(string))
+            catch (CanonSdkException ex)
             {
-                string stringData;
-                // dataSize voor string is niet altijd betrouwbaar van EdsGetPropertySize, gebruik een vaste buffer of dynamische allocatie.
-                // EdsGetPropertyData(string) in EDSDK.cs gebruikt al een vaste buffer (256).
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out stringData);
-                data = stringData;
-            }
-            // ... (andere type handlers voor EdsPoint, EdsRect, EdsSize, EdsFocusInfo, byte[])
-            else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsPoint))
-            {
-                EDSDKLib.EDSDK.EdsPoint pointData;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out pointData);
-                data = pointData;
-            }
-            else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsRect))
-            {
-                EDSDKLib.EDSDK.EdsRect rectData;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out rectData);
-                data = rectData;
-            }
-            else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsSize))
-            {
-                EDSDKLib.EDSDK.EdsSize sizeData;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out sizeData);
-                data = sizeData;
-            }
-            else if (typeof(T) == typeof(EDSDKLib.EDSDK.EdsFocusInfo))
-            {
-                EDSDKLib.EDSDK.EdsFocusInfo focusInfo;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out focusInfo);
-                data = focusInfo;
-            }
-            else if (typeof(T) == typeof(byte[]))
-            {
-                byte[] bytesData;
-                err = EDSDKLib.EDSDK.EdsGetPropertyData(_cameraRef, propId, param, out bytesData);
-                data = bytesData;
-            }
-            else
-            {
-                throw new ArgumentException($"Unsupported property data type: {typeof(T).Name}");
+                // Vang de exceptie van de GetPropertyData aanroepen.
+                if (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE || ex.ErrorCode == EDSDK.EDS_ERR_NOT_SUPPORTED)
+                {
+                    Console.WriteLine($"Warning: Property 0x{propId:X} became unavailable during data fetch. Returning default value.");
+                    return default(T);
+                }
+                // Gooi andere fouten wel door.
+                throw;
             }
 
-            if (err != EDSDKLib.EDSDK.EDS_ERR_OK) throw new CanonSdkException($"Failed to get property data for PropID 0x{propId:X}", err);
             return (T)data;
         }
 
