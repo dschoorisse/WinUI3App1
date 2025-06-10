@@ -50,6 +50,7 @@ namespace WinUI3App
         private DispatcherTimer _reviewPageTimeoutTimer; // Timer used to leave the review screen if it takes to long
         private DispatcherTimer _qrPageTimeoutTimer; // Timer to leave the QR screen if it takes to long
 
+        private bool _isFirstLiveFrameReceived = false;
 
         public PhotoBoothPage()
         {
@@ -71,6 +72,12 @@ namespace WinUI3App
             // Initialize QR Page Timer
             _qrPageTimeoutTimer = new DispatcherTimer();
             _qrPageTimeoutTimer.Tick += QrPageTimeoutTimer_Tick;
+
+            // Hide the camera placeholder image initially
+            CameraPlaceholderImage.Opacity = 0;
+            CameraPlaceholderImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+            CameraPlaceholderImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+
 
         }
 
@@ -145,6 +152,13 @@ namespace WinUI3App
 
                             // Use the existing CameraPlaceholderImage to display the live feed.
                             CameraPlaceholderImage.Source = bmp;
+
+                            // --- Animate only the first frame that arrives ---
+                            if (!_isFirstLiveFrameReceived)
+                            {
+                                _isFirstLiveFrameReceived = true;
+                                AnimateLiveViewPopIn();
+                            }
                         }
                         else
                         {
@@ -159,6 +173,27 @@ namespace WinUI3App
             });
         }
 
+        private void AnimateLiveViewPopIn()
+        {
+            App.Logger?.Verbose("Animating live view pop-in.");
+            var scaleXAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var scaleYAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var fadeInAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(400) };
+
+            Storyboard popInSb = new Storyboard();
+            Storyboard.SetTarget(scaleXAnim, (ScaleTransform)CameraPlaceholderImage.RenderTransform);
+            Storyboard.SetTargetProperty(scaleXAnim, "ScaleX");
+            Storyboard.SetTarget(scaleYAnim, (ScaleTransform)CameraPlaceholderImage.RenderTransform);
+            Storyboard.SetTargetProperty(scaleYAnim, "ScaleY");
+            Storyboard.SetTarget(fadeInAnim, CameraPlaceholderImage);
+            Storyboard.SetTargetProperty(fadeInAnim, "Opacity");
+
+            popInSb.Children.Add(scaleXAnim);
+            popInSb.Children.Add(scaleYAnim);
+            popInSb.Children.Add(fadeInAnim);
+            popInSb.Begin();
+        }
+
         // This happens before the _Loaded event, but the UI tree is not yet fully ready
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
@@ -170,7 +205,7 @@ namespace WinUI3App
             {
                 App.Logger?.Information("PhotoBoothPage: Subscribing to LiveViewFrameReady event.");
                 App.AppCameraService.LiveViewFrameReady += OnLiveViewFrameReady;
-                await App.AppCameraService.StartLiveViewAsync();
+                //await App.AppCameraService.StartLiveViewAsync(); // This is done in the previous page (MainPage.xaml.cs) to decrease loading time
             }
         }
 
@@ -280,6 +315,7 @@ namespace WinUI3App
             App.State = App.PhotoBoothState.ResettingPhotoBoothPage;
 
             // Reset the state and UI elements
+            _isFirstLiveFrameReceived = false; // Reset the animation flag
             _photosTaken = 0;
             _photoPaths.Clear();
 
@@ -551,8 +587,15 @@ namespace WinUI3App
             CameraPlaceholderImage.Visibility = Visibility.Collapsed; // Hide the live feed/placeholder
             App.Logger.Debug("TakePhotoSimulation: CameraPlaceholderImage hidden.");
 
-            TakenPhotoImage.Source = new BitmapImage(new Uri(capturedImagePath)); // Set the image source for the preview
-            App.Logger.Debug($"TakePhotoSimulation: TakenPhotoImage source set to picture taken at {capturedImagePath}.");
+            if(!String.IsNullOrEmpty(capturedImagePath))
+            { 
+                TakenPhotoImage.Source = new BitmapImage(new Uri(capturedImagePath)); // Set the image source for the preview
+                App.Logger.Debug($"TakePhotoSimulation: TakenPhotoImage source set to picture taken at {capturedImagePath}.");
+            }
+            else
+            {
+                App.Logger.Error("TakePhotoSimulation: No valid captured image path provided, cannot set preview.");
+            }
 
             // Ensure the RenderTransform is set up correctly for animations and reset its initial state (scaled down, transparent)
             if (TakenPhotoImage.RenderTransform is not ScaleTransform)

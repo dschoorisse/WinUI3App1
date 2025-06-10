@@ -359,6 +359,17 @@ namespace WinUI3App
         {
             App.Logger?.Debug("MainPage: Photo capture initiated");
 
+            // Start the live view process in the background without waiting for it to complete.
+            if (App.AppCameraService != null)
+            {
+                App.Logger?.Debug("MainPage: Starting live view for camera service for next page to save loading time in next page.");
+                _ = App.AppCameraService.StartLiveViewAsync();
+            }
+            else
+            {
+                App.Logger?.Error("MainPage: AppCameraService is null, cannot start live view.");
+            }
+
             // Navigate to photo capture page
             Frame.Navigate(typeof(PhotoBoothPage));
         }
