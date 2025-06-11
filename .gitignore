@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Canon SDK since its propiertary 
+WinUI3App1/SDK/EDSDK
+WinUI3App1/SDK/EDSDK_64

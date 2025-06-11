@@ -9,6 +9,8 @@ namespace WinUI3App1
 {
     public sealed partial class MainWindow : Window
     {
+        public Frame AppFrame => ContentFrame; // Assumes your Frame in MainWindow.xaml is x:Name="ContentFrame"
+
         public MainWindow()
         {
             this.InitializeComponent();

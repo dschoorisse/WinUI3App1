@@ -1,758 +1,1418 @@
-using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+﻿using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
-using System.Threading;
+using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Xaml.Shapes;
+using Serilog;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+using WinUI3App1;
+using System.Linq;
+using Rectangle = SixLabors.ImageSharp.Rectangle;
+using Path = System.IO.Path;
+using Windows.Media.DialProtocol;
+using QRCoder;
+using Windows.Storage.Streams;
+using Canon.Sdk.Exceptions;
+using Canon.Sdk.Core;
+using System.Runtime.InteropServices.WindowsRuntime;
 
-namespace WinUI3App1
+namespace WinUI3App
 {
-    // Separate Photo Booth page that can be navigated to from MainWindow
     public sealed partial class PhotoBoothPage : Page
     {
-        private CanonCameraControllerExtended _cameraController;
-        private TextBlock _statusText;
-        private Image _previewImage;
-        private bool _isCountdownActive = false;
-        private int _countdownValue = 3;
-        private string _lastPhotoPath;
+        private int _photosTaken = 0;
+        private const int TOTAL_PHOTOS_TO_TAKE = 3;
+        private List<string> _photoPaths = new List<string>(); // contains the paths of the taken individual photos
 
-        // Setting controls
-        private ComboBox _isoComboBox;
-        private ComboBox _apertureComboBox;
-        private ComboBox _shutterSpeedComboBox;
-        private ComboBox _imageQualityComboBox;
+        // Construct place holder image path
+        private static readonly string PlaceholderImageFileName = "placeholder.jpg";
+        private static readonly string AssetsFolderName = "Assets";
+        private static readonly string PLACEHOLDER_IMAGE_PATH = System.IO.Path.Combine(AppContext.BaseDirectory, AssetsFolderName, PlaceholderImageFileName);
 
-        // Live view background loop
-        private CancellationTokenSource _liveViewCancellationTokenSource;
+        // Holds the S3Service instance for uploading photos
+        private S3Service _s3Service;
+
+        // Color of the dots
+        private readonly SolidColorBrush _dotPendingBrush = new SolidColorBrush(Colors.DimGray);
+        private readonly SolidColorBrush _dotActiveBrush = new SolidColorBrush(Colors.DodgerBlue);
+        private readonly SolidColorBrush _dotCompletedBrush = new SolidColorBrush(Colors.LimeGreen);
+
+        private DispatcherTimer _reviewPageTimeoutTimer; // Timer used to leave the review screen if it takes to long
+        private DispatcherTimer _qrPageTimeoutTimer; // Timer to leave the QR screen if it takes to long
+
+        private bool _isFirstLiveFrameReceived = false;
 
         public PhotoBoothPage()
         {
             this.InitializeComponent();
+            this.Loaded += PhotoBoothPage_Loaded;
 
-            // Create save directory
-            string photosDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-                "PhotoBoothApp");
-
-            if (!Directory.Exists(photosDir))
+            // Log placeholder image path and check if it exists
+            App.Logger?.Debug("PhotoBoothPage: PLACEHOLDER_IMAGE_PATH resolved to: {PlaceholderPath}", PLACEHOLDER_IMAGE_PATH);
+            if (!File.Exists(PLACEHOLDER_IMAGE_PATH))
             {
-                Directory.CreateDirectory(photosDir);
+                App.Logger?.Error("PhotoBoothPage: CRITICAL - Placeholder image not found at resolved path: {PlaceholderPath}", PLACEHOLDER_IMAGE_PATH);
+                // Overweeg hier een fallback of duidelijke foutmelding als de placeholder essentieel is.
             }
+                        
+            // Initialize the timer but don't start it yet
+            _reviewPageTimeoutTimer = new DispatcherTimer();
+            _reviewPageTimeoutTimer.Tick += ReviewPageTimeoutTimer_Tick;
 
-            // Set up UI
-            SetupUI();
+            // Initialize QR Page Timer
+            _qrPageTimeoutTimer = new DispatcherTimer();
+            _qrPageTimeoutTimer.Tick += QrPageTimeoutTimer_Tick;
 
-            // Initialize camera controller
-            _cameraController = new CanonCameraControllerExtended(App.Logger, photosDir);
+            // Hide the camera placeholder image initially
+            CameraPlaceholderImage.Opacity = 0;
+            CameraPlaceholderImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+            CameraPlaceholderImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+
+
         }
 
-        private void SetupUI()
+        private async void PhotoBoothPage_Loaded(object sender, RoutedEventArgs e)
         {
-            // Create a grid as the main container
-            Grid mainGrid = new Grid();
+            await LoadPageBackgroundAsync();
 
-            // Define rows
-            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(1, GridUnitType.Star) });
-            mainGrid.RowDefinitions.Add(new RowDefinition() { Height = new GridLength(150) });
+            LoadConfigurableTexts(); // Load texts after settings are available via App.CurrentSettings
 
-            // Define columns for settings panel
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(1, GridUnitType.Star) });
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition() { Width = new GridLength(250) });
-
-            // Create image preview area
-            Grid previewGrid = new Grid();
-            Border previewBorder = new Border
-            {
-                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black),
-                BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray),
-                BorderThickness = new Thickness(1),
-                Margin = new Thickness(10)
-            };
-
-            _previewImage = new Image
-            {
-                Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            _statusText = new TextBlock
-            {
-                Text = "Connect to camera to start",
-                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
-                FontSize = 24,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            previewGrid.Children.Add(_previewImage);
-            previewGrid.Children.Add(_statusText);
-            previewBorder.Child = previewGrid;
-
-            Grid.SetRow(previewBorder, 0);
-            Grid.SetColumn(previewBorder, 0);
-            mainGrid.Children.Add(previewBorder);
-
-            // Create settings panel
-            ScrollViewer settingsScroll = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Margin = new Thickness(0, 10, 10, 10)
-            };
-
-            StackPanel settingsPanel = new StackPanel
-            {
-                Margin = new Thickness(10)
-            };
-
-            TextBlock settingsTitle = new TextBlock
-            {
-                Text = "Camera Settings",
-                FontSize = 18,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            settingsPanel.Children.Add(settingsTitle);
-
-            // ISO setting
-            TextBlock isoLabel = new TextBlock
-            {
-                Text = "ISO Speed:",
-                Margin = new Thickness(0, 5, 0, 2)
-            };
-            settingsPanel.Children.Add(isoLabel);
-
-            _isoComboBox = new ComboBox
-            {
-                Width = double.NaN, // Auto width
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                IsEnabled = false
-            };
-            settingsPanel.Children.Add(_isoComboBox);
-
-            // Aperture setting
-            TextBlock apertureLabel = new TextBlock
-            {
-                Text = "Aperture:",
-                Margin = new Thickness(0, 10, 0, 2)
-            };
-            settingsPanel.Children.Add(apertureLabel);
-
-            _apertureComboBox = new ComboBox
-            {
-                Width = double.NaN, // Auto width
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                IsEnabled = false
-            };
-            settingsPanel.Children.Add(_apertureComboBox);
-
-            // Shutter speed setting
-            TextBlock shutterSpeedLabel = new TextBlock
-            {
-                Text = "Shutter Speed:",
-                Margin = new Thickness(0, 10, 0, 2)
-            };
-            settingsPanel.Children.Add(shutterSpeedLabel);
-
-            _shutterSpeedComboBox = new ComboBox
-            {
-                Width = double.NaN, // Auto width
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                IsEnabled = false
-            };
-            settingsPanel.Children.Add(_shutterSpeedComboBox);
-
-            // Image quality setting
-            TextBlock imageQualityLabel = new TextBlock
-            {
-                Text = "Image Quality:",
-                Margin = new Thickness(0, 10, 0, 2)
-            };
-            settingsPanel.Children.Add(imageQualityLabel);
-
-            _imageQualityComboBox = new ComboBox
-            {
-                Width = double.NaN, // Auto width
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                IsEnabled = false
-            };
-            settingsPanel.Children.Add(_imageQualityComboBox);
-
-            // Apply settings button
-            Button applySettingsButton = new Button
-            {
-                Content = "Apply Settings",
-                Margin = new Thickness(0, 20, 0, 0),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                IsEnabled = false
-            };
-            applySettingsButton.Click += ApplySettingsButton_Click;
-            settingsPanel.Children.Add(applySettingsButton);
-
-            settingsScroll.Content = settingsPanel;
-            Grid.SetRow(settingsScroll, 0);
-            Grid.SetColumn(settingsScroll, 1);
-            mainGrid.Children.Add(settingsScroll);
-
-            // Create buttons panel
-            StackPanel buttonsPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 15,
-                Margin = new Thickness(10)
-            };
-
-            // Connect button
-            Button connectButton = new Button
-            {
-                Content = "Connect Camera",
-                Padding = new Thickness(15, 8, 15, 8),
-                MinWidth = 150
-            };
-            connectButton.Click += ConnectButton_Click;
-            buttonsPanel.Children.Add(connectButton);
-
-            // Take Picture button
-            Button takePictureButton = new Button
-            {
-                Content = "Take Picture",
-                Padding = new Thickness(15, 8, 15, 8),
-                MinWidth = 150,
-                IsEnabled = false
-            };
-            takePictureButton.Click += TakePictureButton_Click;
-            buttonsPanel.Children.Add(takePictureButton);
-
-            // Live View button
-            Button liveViewButton = new Button
-            {
-                Content = "Start Live View",
-                Padding = new Thickness(15, 8, 15, 8),
-                MinWidth = 150,
-                IsEnabled = false
-            };
-            liveViewButton.Click += LiveViewButton_Click;
-            buttonsPanel.Children.Add(liveViewButton);
-
-            // Countdown Toggle
-            CheckBox countdownToggle = new CheckBox
-            {
-                Content = "3s Countdown",
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(15, 0, 0, 0),
-                IsEnabled = false
-            };
-            countdownToggle.Checked += CountdownToggle_CheckedChanged;
-            countdownToggle.Unchecked += CountdownToggle_CheckedChanged;
-            buttonsPanel.Children.Add(countdownToggle);
-
-            Grid.SetRow(buttonsPanel, 1);
-            Grid.SetColumn(buttonsPanel, 0);
-            Grid.SetColumnSpan(buttonsPanel, 2);
-            mainGrid.Children.Add(buttonsPanel);
-
-            // Set content
-            this.Content = mainGrid;
-        }
-
-        private async void ConnectButton_Click(object sender, RoutedEventArgs e)
-        {
-            Button button = (Button)sender;
-
-            if (button.Content.ToString() == "Connect Camera")
-            {
-                button.IsEnabled = false;
-                _statusText.Text = "Connecting to camera...";
-
-                try
-                {
-                    bool connected = _cameraController.Connect();
-
-                    if (connected)
-                    {
-                        _statusText.Text = "Camera connected";
-                        button.Content = "Disconnect Camera";
-
-                        // Enable camera control buttons
-                        foreach (var child in ((StackPanel)((Grid)this.Content).Children[2]).Children)
-                        {
-                            if (child is Button btn && btn != button)
-                            {
-                                btn.IsEnabled = true;
-                            }
-                            else if (child is CheckBox chk)
-                            {
-                                chk.IsEnabled = true;
-                            }
-                        }
-
-                        // Enable settings controls
-                        _isoComboBox.IsEnabled = true;
-                        _apertureComboBox.IsEnabled = true;
-                        _shutterSpeedComboBox.IsEnabled = true;
-                        _imageQualityComboBox.IsEnabled = true;
-
-                        // Find a Button with "Apply Settings" content
-                        Button applyButton = null;
-                        StackPanel settingsPanel = (StackPanel)((ScrollViewer)((Grid)this.Content).Children[1]).Content;
-                        foreach (var child in settingsPanel.Children)
-                        {
-                            if (child is Button btn && btn.Content.ToString() == "Apply Settings")
-                            {
-                                btn.IsEnabled = true;
-                                break;
-                            }
-                        }
-
-                        // Load available camera settings
-                        await LoadCameraSettings();
-                    }
-                    else
-                    {
-                        _statusText.Text = "Failed to connect to camera";
-
-                        ContentDialog dialog = new ContentDialog
-                        {
-                            Title = "Connection Error",
-                            Content = "Failed to connect to the camera. Ensure it's powered on and properly connected via USB.",
-                            CloseButtonText = "OK",
-                            XamlRoot = this.XamlRoot
-                        };
-
-                        await dialog.ShowAsync();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _statusText.Text = $"Error: {ex.Message}";
-                    App.Logger.Error(ex, "Error connecting to camera");
-                }
-                finally
-                {
-                    button.IsEnabled = true;
-                }
-            }
-            else // Disconnect
-            {
-                button.IsEnabled = false;
-                _statusText.Text = "Disconnecting camera...";
-
-                try
-                {
-                    _cameraController.Disconnect();
-
-                    _statusText.Text = "Camera disconnected";
-                    button.Content = "Connect Camera";
-
-                    // Disable camera control buttons
-                    foreach (var child in ((StackPanel)((Grid)this.Content).Children[2]).Children)
-                    {
-                        if (child is Button btn && btn != button)
-                        {
-                            btn.IsEnabled = false;
-                        }
-                        else if (child is CheckBox chk)
-                        {
-                            chk.IsEnabled = false;
-                        }
-                    }
-
-                    // Disable settings controls
-                    _isoComboBox.IsEnabled = false;
-                    _apertureComboBox.IsEnabled = false;
-                    _shutterSpeedComboBox.IsEnabled = false;
-                    _imageQualityComboBox.IsEnabled = false;
-
-                    // Find a Button with "Apply Settings" content
-                    Button applyButton = null;
-                    StackPanel settingsPanel = (StackPanel)((ScrollViewer)((Grid)this.Content).Children[1]).Content;
-                    foreach (var child in settingsPanel.Children)
-                    {
-                        if (child is Button btn && btn.Content.ToString() == "Apply Settings")
-                        {
-                            btn.IsEnabled = false;
-                            break;
-                        }
-                    }
-
-                    // Clear preview image
-                    _previewImage.Source = null;
-                }
-                catch (Exception ex)
-                {
-                    _statusText.Text = $"Error: {ex.Message}";
-                    App.Logger.Error(ex, "Error disconnecting camera");
-                }
-                finally
-                {
-                    button.IsEnabled = true;
-                }
-            }
-        }
-
-        private async Task LoadCameraSettings()
-        {
+            #region Initialise S3 service
+            // Initialise S3Service (na App.CurrentSettings en App.Logger)
             try
             {
-                _statusText.Text = "Loading camera settings...";
-
-                // Clear existing items
-                _isoComboBox.Items.Clear();
-                _apertureComboBox.Items.Clear();
-                _shutterSpeedComboBox.Items.Clear();
-                _imageQualityComboBox.Items.Clear();
-
-                // Get current settings
-                uint currentIso = 0;
-                uint currentAperture = 0;
-                uint currentShutterSpeed = 0;
-                //bool success = _cameraController.GetCurrentSettings(out currentIso, out currentAperture, out currentShutterSpeed);
-
-                // Load ISO options
-                /*
-                List<uint> isoValues = CameraPropertyMethods.GetAvailableIsoSpeeds(_cameraController.CameraRef, App.Logger);
-                foreach (uint isoValue in isoValues)
+                if (App.CurrentSettings != null && App.Logger != null)
                 {
-                    ComboBoxItem item = new ComboBoxItem
-                    {
-                        Content = CameraPropertyMethods.IsoSpeedValueToString(isoValue),
-                        Tag = isoValue
-                    };
-
-                    _isoComboBox.Items.Add(item);
-
-                    if (isoValue == currentIso)
-                    {
-                        _isoComboBox.SelectedItem = item;
-                    }
+                    _s3Service = new S3Service(App.CurrentSettings, App.Logger);
                 }
-
-                // Load aperture options
-                List<uint> apertureValues = CameraPropertyMethods.GetAvailableApertures(_cameraController.CameraRef, App.Logger);
-                foreach (uint apertureValue in apertureValues)
+                else
                 {
-                    ComboBoxItem item = new ComboBoxItem
-                    {
-                        Content = CameraPropertyMethods.ApertureValueToFNumber(apertureValue),
-                        Tag = apertureValue
-                    };
-
-                    _apertureComboBox.Items.Add(item);
-
-                    if (apertureValue == currentAperture)
-                    {
-                        _apertureComboBox.SelectedItem = item;
-                    }
+                    App.Logger?.Error("PhotoBoothPage: Cannot initialize S3Service because App.CurrentSettings or App.Logger is null.");
+                    // Handel deze fout af, mogelijk door upload functionaliteit uit te schakelen.
                 }
-
-                // Load shutter speed options
-                List<uint> shutterSpeedValues = CameraPropertyMethods.GetAvailableShutterSpeeds(_cameraController.CameraRef, App.Logger);
-                foreach (uint tvValue in shutterSpeedValues)
-                {
-                    ComboBoxItem item = new ComboBoxItem
-                    {
-                        Content = CameraPropertyMethods.ShutterSpeedValueToExposureTime(tvValue),
-                        Tag = tvValue
-                    };
-
-                    _shutterSpeedComboBox.Items.Add(item);
-
-                    if (tvValue == currentShutterSpeed)
-                    {
-                        _shutterSpeedComboBox.SelectedItem = item;
-                    }
-                }
-
-                // Load image quality options
-                List<uint> imageQualityValues = _cameraController.GetAvailableImageQualities();
-                foreach (uint qualityValue in imageQualityValues)
-                {
-                    ComboBoxItem item = new ComboBoxItem
-                    {
-                        Content = $"Quality {qualityValue}", // You could make a helper method to convert these values to readable names
-                        Tag = qualityValue
-                    };
-
-                    _imageQualityComboBox.Items.Add(item);
-                }
-                */
-
-                _statusText.Text = "Camera ready";
             }
             catch (Exception ex)
             {
-                _statusText.Text = "Error loading camera settings";
-                App.Logger.Error(ex, "Error loading camera settings");
+                App.Logger?.Error(ex, "PhotoBoothPage: Failed to initialize S3Service.");
+                // Handel fout af
             }
-        }
+            #endregion
 
-        private void ApplySettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            Button button = (Button)sender;
-            button.IsEnabled = false;
+
+            #region Review timeout timer
+            // Set timer interval based on loaded settings
+            if (App.CurrentSettings != null)
+            {
+                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(App.CurrentSettings.ReviewPageTimeoutSeconds > 0 ? App.CurrentSettings.ReviewPageTimeoutSeconds : 30); // Use default if setting is invalid
+                App.Logger?.Debug("PhotoBoothPage: Review page timeout set to {Timeout} seconds.", _reviewPageTimeoutTimer.Interval.TotalSeconds);
+            }
+            else
+            {
+                _reviewPageTimeoutTimer.Interval = TimeSpan.FromSeconds(30); // Fallback default
+                App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null, review page timeout defaulted to 30 seconds.");
+            }
+            #endregion
 
             
-            try
-            {
-                _statusText.Text = "Applying camera settings...";
 
-                /*
-                // Apply ISO setting
-                if (_isoComboBox.SelectedItem != null)
-                {
-                    uint isoValue = (uint)((ComboBoxItem)_isoComboBox.SelectedItem).Tag;
-                    _cameraController.SetIsoSpeed(isoValue);
-                }
-
-                // Apply aperture setting
-                if (_apertureComboBox.SelectedItem != null)
-                {
-                    uint apertureValue = (uint)((ComboBoxItem)_apertureComboBox.SelectedItem).Tag;
-                    _cameraController.SetAperture(apertureValue);
-                }
-
-                // Apply shutter speed setting
-                if (_shutterSpeedComboBox.SelectedItem != null)
-                {
-                    uint shutterSpeedValue = (uint)((ComboBoxItem)_shutterSpeedComboBox.SelectedItem).Tag;
-                    _cameraController.SetShutterSpeed(shutterSpeedValue);
-                }
-
-                // Apply image quality setting
-                if (_imageQualityComboBox.SelectedItem != null)
-                {
-                    uint imageQualityValue = (uint)((ComboBoxItem)_imageQualityComboBox.SelectedItem).Tag;
-                    _cameraController.SetImageQuality(imageQualityValue);
-                }
-                */
-
-                _statusText.Text = "Settings applied";
-            }
-            catch (Exception ex)
-            {
-                _statusText.Text = $"Error applying settings: {ex.Message}";
-                App.Logger.Error(ex, "Error applying camera settings");
-            }
-            finally
-            {
-                button.IsEnabled = true;
-            }
+            await StartPhotoProcedure();
         }
 
-        private async void TakePictureButton_Click(object sender, RoutedEventArgs e)
+        private void OnLiveViewFrameReady(object sender, LiveViewFrameEventArgs e)
         {
-            Button button = (Button)sender;
-            button.IsEnabled = false;
+            App.Logger?.Verbose("PhotoBoothPage: LiveViewFrameReady event received.");
 
-            try
+            if (e.ImageData == null || e.ImageData.Length == 0) return;
+
+            // Ensure update is on the UI thread
+            DispatcherQueue.TryEnqueue(async () =>
             {
-                _statusText.Text = "Taking picture...";
-
-                // 1. Stop Live View fetching
-                //_liveViewCancellationTokenSource?.Cancel();
-
-                // 2. Tell the camera to take a photo
-                bool success = _cameraController.TakePicture();
-
-                if (success)
+                try
                 {
-                    _statusText.Text = "Picture taken!";
-
-                    // 3. Small wait for camera to save
-                    await Task.Delay(2000);
-
-                    // 4. OPTIONAL: Load the latest captured image
-                    // For now we'll just show a placeholder or black screen
-
-                    // DVS: maybe not download it from camera, but use the low quality preview image only for on-screen
-
-                    // If you have image download already (in ObjectEventHandler), you could load it here!
-
-                    /*
-                    var latestPhotoBytes = await LoadLatestPhotoBytesAsync();
-                    if (latestPhotoBytes != null)
+                    using (var ms = new InMemoryRandomAccessStream())
                     {
-                        DispatcherQueue.TryEnqueue(() =>
+                        if (CameraPlaceholderImage != null)
                         {
-                            using var stream = new MemoryStream(latestPhotoBytes);
-                            var bitmap = new BitmapImage();
-                            bitmap.SetSource(stream.AsRandomAccessStream());
-                            _previewImage.Source = bitmap;
-                        });
 
-                        await Task.Delay(3000); // Show the photo for 3 seconds
-                    }
-                    */
+                            await ms.WriteAsync(e.ImageData.AsBuffer());
+                            ms.Seek(0);
 
-                    await Task.Delay(3000); // Just wait 3 seconds for now
-                }
-                else
-                {
-                    _statusText.Text = "Failed to take picture.";
-                }
-            }
-            catch (Exception ex)
-            {
-                _statusText.Text = $"Error: {ex.Message}";
-            }
-            finally
-            {
-                // 5. Restart Live View
-                if (_cameraController.StartLiveView())
-                {
-                    StartLiveViewDisplayLoop();
-                    _statusText.Text = "Ready for next photo!";
-                }
-                else
-                {
-                    _statusText.Text = "Failed to restart Live View.";
-                }
+                            var bmp = new BitmapImage();
+                            await bmp.SetSourceAsync(ms);
 
-                button.IsEnabled = true;
-            }
-        }
+                            // Use the existing CameraPlaceholderImage to display the live feed.
+                            CameraPlaceholderImage.Source = bmp;
 
-
-        private async void LiveViewButton_Click(object sender, RoutedEventArgs e)
-        {
-            Button button = (Button)sender;
-            button.IsEnabled = false;
-
-            try
-            {
-                if (button.Content.ToString() == "Start Live View")
-                {
-                    _statusText.Text = "Starting Live View...";
-
-                    bool success = _cameraController.StartLiveView();
-
-                    if (success)
-                    {
-                        button.Content = "Stop Live View";
-                        _statusText.Text = "Live View active";
-
-                        // In a real implementation, you would download and display
-                        // live view frames continuously here
-
-                        StartLiveViewDisplayLoop(); // <-- start showing frames
-                    }
-                    else
-                    {
-                        _statusText.Text = "Failed to start Live View";
-
-                        ContentDialog dialog = new ContentDialog
+                            // --- Animate only the first frame that arrives ---
+                            if (!_isFirstLiveFrameReceived)
+                            {
+                                _isFirstLiveFrameReceived = true;
+                                AnimateLiveViewPopIn();
+                            }
+                        }
+                        else
                         {
-                            Title = "Live View Error",
-                            Content = "Failed to start Live View. Make sure your camera supports this feature.",
-                            CloseButtonText = "OK",
-                            XamlRoot = this.XamlRoot
-                        };
-
-                        await dialog.ShowAsync();
+                            App.Logger?.Warning($"Cannot write live image to CameraPlaceholderImage because it is still null");
+                        }
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _statusText.Text = "Stopping Live View...";
-
-                    // Stop continuous frame download
-                    _liveViewCancellationTokenSource?.Cancel();
-
-                    // Send stop live view command to the camera
-                    bool success = _cameraController.StopLiveView();
-
-                    if (success)
-                    {
-                        button.Content = "Start Live View";
-                        _statusText.Text = "Live View stopped";
-                    }
-                    else
-                    {
-                        _statusText.Text = "Failed to stop Live View";
-                    }
+                    App.Logger?.Error(ex, "Failed to update live view image.");
                 }
-            }
-            catch (Exception ex)
-            {
-                _statusText.Text = $"Error: {ex.Message}";
-                App.Logger.Error(ex, "Error with Live View");
-            }
-            finally
-            {
-                button.IsEnabled = true;
-            }
+            });
         }
 
-        private void CountdownToggle_CheckedChanged(object sender, RoutedEventArgs e)
+        private void AnimateLiveViewPopIn()
         {
-            CheckBox checkBox = (CheckBox)sender;
-            _isCountdownActive = checkBox.IsChecked ?? false;
+            App.Logger?.Verbose("Animating live view pop-in.");
+            var scaleXAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var scaleYAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var fadeInAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(400) };
+
+            Storyboard popInSb = new Storyboard();
+            Storyboard.SetTarget(scaleXAnim, (ScaleTransform)CameraPlaceholderImage.RenderTransform);
+            Storyboard.SetTargetProperty(scaleXAnim, "ScaleX");
+            Storyboard.SetTarget(scaleYAnim, (ScaleTransform)CameraPlaceholderImage.RenderTransform);
+            Storyboard.SetTargetProperty(scaleYAnim, "ScaleY");
+            Storyboard.SetTarget(fadeInAnim, CameraPlaceholderImage);
+            Storyboard.SetTargetProperty(fadeInAnim, "Opacity");
+
+            popInSb.Children.Add(scaleXAnim);
+            popInSb.Children.Add(scaleYAnim);
+            popInSb.Children.Add(fadeInAnim);
+            popInSb.Begin();
         }
 
-        // Clean up resources when navigating away from this page
-        protected override void OnNavigatedFrom(Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
+        // This happens before the _Loaded event, but the UI tree is not yet fully ready
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+            App.State = App.PhotoBoothState.LoadingPhotoBoothPage;
+
+            // Start the live preview
+            if (App.AppCameraService != null)
+            {
+                App.Logger?.Information("PhotoBoothPage: Subscribing to LiveViewFrameReady event.");
+                App.AppCameraService.LiveViewFrameReady += OnLiveViewFrameReady;
+                //await App.AppCameraService.StartLiveViewAsync(); // This is done in the previous page (MainPage.xaml.cs) to decrease loading time
+            }
+        }
+
+        protected override async void OnNavigatedFrom(NavigationEventArgs e)
         {
             base.OnNavigatedFrom(e);
-
-            // Make sure camera is disconnected when navigating away
-            if (_cameraController != null)
+            if (App.AppCameraService != null)
             {
-                _cameraController.Disconnect();
-                _cameraController.Dispose();
-                _cameraController = null;
+                App.Logger?.Information("PhotoBoothPage: Navigating away. Unsubscribing and stopping live view.");
+                App.AppCameraService.LiveViewFrameReady -= OnLiveViewFrameReady;
+                await App.AppCameraService.StopLiveViewAsync();
             }
         }
 
-        private async void StartLiveViewDisplayLoop()
+        // Method to load configurable texts
+        private void LoadConfigurableTexts()
         {
-            _liveViewCancellationTokenSource = new CancellationTokenSource();
-            var token = _liveViewCancellationTokenSource.Token;
-            //const int targetFrameTimeMs = 66; // 15 fps
-            const int targetFrameTimeMs = 45;
-
-
-            try
+            if (App.CurrentSettings == null)
             {
-                while (!token.IsCancellationRequested)
+                // No settings available, log a warning and return. The UI will use fallbacks set in the XAML. 
+                App.Logger?.Warning("PhotoBoothPage: App.CurrentSettings is null in LoadConfigurableTexts. UI texts might use fallbacks.");
+                return;
+            }
+
+            // For InstructionText - set in ShowInstructions directly using settings
+            // For Countdown steps - set in DoCountdown directly using settings
+            // For Saving/Done messages - set in AcceptButton_Click directly using settings
+
+            // Set button texts (assuming TextBlocks have x:Name="AcceptButtonLabel" and x:Name="RetakeButtonLabel")
+            if (this.FindName("AcceptButtonLabel") is TextBlock accLabel)
+            {
+                accLabel.Text = App.CurrentSettings.UiButtonAcceptText ?? "OK";
+            }
+            if (this.FindName("RetakeButtonLabel") is TextBlock retLabel)
+            {
+                retLabel.Text = App.CurrentSettings.UiButtonRetakeText ?? "Retake";
+            }
+            if (this.FindName("QrCodeInstructionText") is TextBlock qrInstruction)
+            {
+                qrInstruction.Text = App.CurrentSettings.UiQrInstruction;
+            }
+            if (this.FindName("CloseQrButtonLabel") is TextBlock qrCloseButtonLabel)
+            {
+                qrCloseButtonLabel.Text = App.CurrentSettings.UiQrCloseButton;
+            }
+        }
+
+
+        // In PhotoBoothPage.xaml.cs (and similarly in MainPage.xaml.cs)
+        private async Task LoadPageBackgroundAsync()
+        {
+            App.Logger?.Debug("{PageName}: Attempting to apply preloaded page background.", this.GetType().Name);
+            var pageBackgroundImageControl = this.FindName("PageBackgroundImage") as Microsoft.UI.Xaml.Controls.Image;
+            var pageBackgroundOverlayControl = this.FindName("PageBackgroundOverlay") as Grid;
+
+            if (pageBackgroundImageControl == null)
+            {
+                App.Logger?.Error("{PageName}: PageBackgroundImage control not found in XAML.", this.GetType().Name);
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            if (App.PreloadedBackgroundImage != null)
+            {
+                pageBackgroundImageControl.Source = App.PreloadedBackgroundImage;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Visible;
+                App.Logger?.Debug("{PageName}: Applied preloaded background image.", this.GetType().Name);
+            }
+            else
+            {
+                // Fallback if preloading failed or no image was configured
+                pageBackgroundImageControl.Source = null;
+                if (pageBackgroundOverlayControl != null) pageBackgroundOverlayControl.Visibility = Visibility.Collapsed;
+                App.Logger?.Information("{PageName}: No preloaded background image available or configured. Background cleared.", this.GetType().Name);
+
+                // Optional: You could attempt to load it directly here as a fallback if App.PreloadedBackgroundImage is null
+                // but App.CurrentSettings.BackgroundImagePath has a value (e.g., if preload failed but path is valid).
+                // For simplicity, this example assumes if preload failed, we show no background.
+                // If you want a fallback load:
+                // if (App.CurrentSettings != null && !string.IsNullOrEmpty(App.CurrentSettings.BackgroundImagePath) && File.Exists(App.CurrentSettings.BackgroundImagePath)) { ... load it now ... }
+            }
+            // This method might no longer need to be async if it's just assigning the Source
+            // unless you keep the fallback direct load logic. For now, keep as Task for consistency.
+            await Task.CompletedTask;
+        }
+
+        private void UpdateProgressIndicator(int photosSuccessfullyCompleted, bool isCapturingNext)
+        {
+            // Update the progress dots based on the number of photos taken
+            // and whether we are capturing the next photo
+            // Set the colors of the dots based on the current state
+            App.Logger.Debug($"Updating progress indicator: {photosSuccessfullyCompleted} photos taken, capturing next: {isCapturingNext}");
+            Ellipse[] dots = { ProgressDot1, ProgressDot2, ProgressDot3 };
+            for (int i = 0; i < dots.Length; i++)
+            {
+                App.Logger.Verbose($"Dot {i + 1} state: {(i < photosSuccessfullyCompleted ? "Completed" : (i == photosSuccessfullyCompleted && isCapturingNext ? "Active" : "Pending"))}");
+                if (i < photosSuccessfullyCompleted) { dots[i].Fill = _dotCompletedBrush; }
+                else if (i == photosSuccessfullyCompleted && isCapturingNext && photosSuccessfullyCompleted < TOTAL_PHOTOS_TO_TAKE) { dots[i].Fill = _dotActiveBrush; }
+                else { dots[i].Fill = _dotPendingBrush; }
+            }
+            // Visibility of the panel itself is now controlled by the calling methods
+        }
+
+        private async void ResetProcedure()
+        {
+            App.Logger.Debug("Resetting photo booth procedure...");
+            App.State = App.PhotoBoothState.ResettingPhotoBoothPage;
+
+            // Reset the state and UI elements
+            _isFirstLiveFrameReceived = false; // Reset the animation flag
+            _photosTaken = 0;
+            _photoPaths.Clear();
+
+            InstructionTextBackground.Opacity = 0;
+            CountdownTextBackground.Opacity = 0;
+            CountdownText.Text = "";
+            TakenPhotoImage.Source = null;
+            TakenPhotoImage.Opacity = 0;
+            if (TakenPhotoImage.RenderTransform is ScaleTransform st)
+            {
+                st.ScaleX = 0.5; st.ScaleY = 0.5;
+            }
+            else
+            {
+                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+            }
+
+            CaptureElementsViewbox.Visibility = Visibility.Visible;
+
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            HorizontalPhotoGalleryContainer.Opacity = 0;
+
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Opacity = 0;
+
+            ActionButtonsPanel.Visibility = Visibility.Collapsed;
+            ActionButtonsPanel.Opacity = 0;
+            OverlayGrid.Visibility = Visibility.Collapsed;
+
+            UpdateProgressIndicator(0, false);
+            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Dots are made visible here (all gray)
+            CameraPlaceholderImage.Visibility = Visibility.Visible;
+
+            CloseQrButton.Visibility = Visibility.Collapsed;
+        }
+
+        private async Task StartPhotoProcedure()
+        {
+            App.Logger.Information("Starting photo procedure...");
+
+            // Make ProgressIndicatorPanel visible with pending dots
+            ResetProcedure();
+
+            await ShowInstructions();
+        }
+
+        private async Task ShowInstructions()
+        {
+            App.Logger.Debug("Showing instructions...");
+
+            // Show instructions to the user
+            App.State = App.PhotoBoothState.ShowingInstructions;
+
+            string instructionFormat = App.CurrentSettings?.UiInstructionTextFormat ?? "We are going to take {0} pictures, get ready!";
+            InstructionText.Text = string.Format(instructionFormat, TOTAL_PHOTOS_TO_TAKE);
+
+            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Keep dots visible as per last request
+            UpdateProgressIndicator(0, false); // Show 3 pending dots
+
+            CaptureElementsViewbox.Visibility = Visibility.Visible;
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+
+            var fadeInAnimation = new DoubleAnimation
+            { To = 1.0, Duration = TimeSpan.FromSeconds(1), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            Storyboard.SetTarget(fadeInAnimation, InstructionTextBackground);
+            Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+            var sb = new Storyboard(); sb.Children.Add(fadeInAnimation); sb.Begin();
+
+            await Task.Delay(3000);
+
+            var fadeOutAnimation = new DoubleAnimation
+            { To = 0.0, Duration = TimeSpan.FromSeconds(1), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            Storyboard.SetTarget(fadeOutAnimation, InstructionTextBackground);
+            Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+            sb = new Storyboard(); sb.Children.Add(fadeOutAnimation); sb.Begin();
+
+            await Task.Delay(1000);
+            await StartNextPhotoCapture();
+        }
+
+        private async Task DoCountdown()
+        {
+            // This method handles the countdown before taking a photo
+            App.Logger.Debug("Starting countdown...");
+
+            // If this is the first photo, show the camera placeholder image
+            if (_photosTaken == 0)
+            {
+                CameraPlaceholderImage.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                CameraPlaceholderImage.Visibility = Visibility.Collapsed;
+            }
+            TakenPhotoImage.Opacity = 0;
+
+            // Use texts from settings, with fallbacks
+            string step3Text = App.CurrentSettings?.UiCountdown3 ?? "3";
+            string step2Text = App.CurrentSettings?.UiCountdown2 ?? "2";
+            string step1Text = App.CurrentSettings?.UiCountdown1 ?? "1";
+            string step0Text = App.CurrentSettings?.UiCountdown0 ?? "📸";
+
+            string[] countdownSteps = { step3Text, step2Text, step1Text, step0Text };
+
+            foreach (var step in countdownSteps)
+            {
+                App.Logger.Debug($"Countdown step: {step} of {countdownSteps.Length}");
+                CountdownText.Text = step;
+                CountdownTextBackground.Opacity = 0;
+
+                var daUkf = new DoubleAnimationUsingKeyFrames();
+                Storyboard.SetTarget(daUkf, CountdownTextBackground); Storyboard.SetTargetProperty(daUkf, "Opacity");
+
+                // KeyFrames for the fade-in and fade-out effect
+                var kfFadeInStart = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(0)), Value = 0 };
+                var kfFadeInEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(250)), Value = 1, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut } };
+                var kfHold = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(750)), Value = 1 };
+                var kfFadeOutEnd = new EasingDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1000)), Value = 0, EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn } };
+
+                daUkf.KeyFrames.Add(kfFadeInStart); daUkf.KeyFrames.Add(kfFadeInEnd); daUkf.KeyFrames.Add(kfHold); daUkf.KeyFrames.Add(kfFadeOutEnd);
+
+                var sb = new Storyboard(); sb.Children.Add(daUkf); sb.Begin();
+                await Task.Delay(1000);
+            }
+            CountdownTextBackground.Opacity = 0; CountdownText.Text = "";
+            await TakePhotoSimulation();
+        }
+
+        private async Task StartNextPhotoCapture()
+        {
+
+            App.Logger.Debug($"Starting next photo capture, current state: {App.State}");
+
+
+            if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
+            {
+                // Proceed to take the next photo
+                App.Logger.Information($"Taking photo {_photosTaken + 1} of {TOTAL_PHOTOS_TO_TAKE}");
+
+                App.State = App.PhotoBoothState.Countdown;
+                CaptureElementsViewbox.Visibility = Visibility.Visible; // Ensure capture elements are visible
+
+                HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+                VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;       // Ensure gallery is hidden
+
+                UpdateProgressIndicator(_photosTaken, true);
+                ProgressIndicatorPanel.Visibility = Visibility.Visible; // Make sure dots are shown
+                await DoCountdown();
+            }
+            else
+            {
+                App.Logger.Information("All photos taken, proceeding to review...");
+
+                // All photos taken, proceed to review
+                await ShowAllPhotosForReview();
+            }
+        }
+
+        // This method simulates taking a photo. In a real application, this would involve camera SDK calls.
+        // It updates the UI to show the taken photo and animates it.
+        // It also handles the progress indicator and prepares for the next photo or review screen.
+        // The method is asynchronous and uses await for delays and animations.
+        // It also sends status updates over MQTT
+        private async Task TakePhotoSimulation()
+        {
+            string capturedImagePath = null; // Hier komt het pad naar de echte foto
+
+            // Log the start of this photo simulation step, indicating which photo number this is (1-based)
+            App.Logger.Information("TakePhotoSimulation: Starting photo {PhotoNumber} of {TotalPhotos}.", _photosTaken + 1, TOTAL_PHOTOS_TO_TAKE);
+
+            #region Take the actual photo with the camera
+            // Set the application's current state to indicate a photo is being "taken"
+            App.State = App.PhotoBoothState.TakingPhoto;
+            App.Logger.Debug("TakePhotoSimulation: State set to TakingPhoto.");
+
+
+            // --- ECHTE FOTO CAPTURE ---
+            if (App.AppCameraService != null && App.AppCameraService.IsCameraAvailable)
+            {
+                try
                 {
-                    var frameStartTime = DateTime.UtcNow;
+                    // 1. STOP THE LIVE VIEW
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Stopping live view for photo capture.");
+                    await App.AppCameraService.StopLiveViewAsync();
 
-                    var frameData = await _cameraController.DownloadLiveViewFrameAsync();
-                    if (frameData != null)
+                    // It can be beneficial to add a small delay to allow the camera to fully switch modes
+                    await Task.Delay(100); // 100ms delay
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Live view stopped, ready to capture photo.");
+
+                    // Toon een "Bezig met foto maken..." bericht aan de gebruiker als je wilt
+                    // UpdateProgressIndicator(_photosTaken, true); // Geef aan dat we bezig zijn met deze foto
+
+                    App.Logger?.Information("PhotoBoothPage.TakePhotoSimulation: Calling AppCameraService.CapturePhotoAsync().");
+                    // Geef een timeout mee als je wilt, anders gebruikt het de default in CameraService
+                    capturedImagePath = await App.AppCameraService.CapturePhotoAsync(TimeSpan.FromSeconds(25)); // Timeout van 25s
+
+                    if (!string.IsNullOrEmpty(capturedImagePath) && File.Exists(capturedImagePath))
                     {
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            using var stream = new MemoryStream(frameData);
-                            var bitmap = new BitmapImage();
-                            bitmap.SetSource(stream.AsRandomAccessStream());
-                            _previewImage.Source = bitmap;
-                        });
+                        App.Logger.Information("PhotoBoothPage.TakePhotoSimulation: Photo captured successfully. Path: {CapturedPath}", capturedImagePath);
                     }
-
-                    var frameDuration = (DateTime.UtcNow - frameStartTime).TotalMilliseconds;
-                    var delay = Math.Max(0, targetFrameTimeMs - (int)frameDuration);
-
-                    if (delay > 0)
+                    else
                     {
-                        await Task.Delay(delay, token);
+                        App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CapturePhotoAsync returned null, empty, or non-existent path: {Path}", capturedImagePath);
+                        // Optioneel: val terug op een placeholder of toon een fout.
+                        // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
+                        // Voor nu, laat capturedImagePath null als het mislukt.
+                        capturedImagePath = null;
+                        // Toon een foutmelding aan de gebruiker via de UI.
+                        await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Kon de foto niet opslaan.");
+                    }
+                }
+                catch (TimeoutException tex)
+                {
+                    App.Logger.Error(tex, "PhotoBoothPage.TakePhotoSimulation: Timeout capturing photo.");
+                    capturedImagePath = null;
+                    await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Camera reageerde te traag.");
+                }
+                catch (CanonSdkException sdkEx)
+                {
+                    App.Logger.Error(sdkEx, "PhotoBoothPage.TakePhotoSimulation: SDK error capturing photo: {ErrorMessage} (0x{ErrorCode:X})", sdkEx.Message, sdkEx.ErrorCode);
+                    capturedImagePath = null;
+                    // Gebruik de CameraErrorOccurred event string als die relevant is, of een generieke.
+                    await ShowCaptureErrorDialogAsync("Camerafout", $"Technische fout: {sdkEx.Message}");
+                }
+                catch (Exception ex)
+                {
+                    App.Logger.Error(ex, "PhotoBoothPage.TakePhotoSimulation: Generic error capturing photo.");
+                    capturedImagePath = null;
+                    await ShowCaptureErrorDialogAsync("Fout", "Er is een onbekende fout opgetreden bij het maken van de foto.");
+                }
+            }
+            else
+            {
+                // TODO: show an error in the UI
+
+                App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CameraService not available or camera not ready.");
+                // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
+                capturedImagePath = null;
+                await ShowCaptureErrorDialogAsync("Camera niet beschikbaar", "Controleer of de camera is aangesloten en probeer opnieuw.");
+            }
+            // --- EINDE ECHTE FOTO CAPTURE ---
+
+
+            // Simulate a short delay for actual camera capture time
+            App.Logger.Debug("TakePhotoSimulation: Simulating camera capture delay (100ms).");
+            await Task.Delay(100); // In a real app, this would be your camera SDK's capture call.
+            App.Logger.Debug("TakePhotoSimulation: Capture delay complete.");
+            #endregion
+
+            // The picture that the camera took is downloaded automatically by the CameraService in an event handler
+            // The path to the downloaded image is capturedImagePath
+
+
+            // Add the path of the "taken" photo (currently a placeholder) to our list
+            _photoPaths.Add(capturedImagePath);
+            // Increment the counter for photos taken
+            _photosTaken++;
+            App.Logger.Debug("TakePhotoSimulation: Placeholder photo recorded. Total photos taken: {PhotosTakenCount}.", _photosTaken);
+
+            // Update the progress indicator dots to reflect the photo just taken as completed.
+            // The 'false' for isCapturingNext indicates we are done with this capture, not starting the next countdown yet.
+            UpdateProgressIndicator(_photosTaken, false);
+            ProgressIndicatorPanel.Visibility = Visibility.Visible; // Ensure the dots panel remains visible
+            App.Logger.Debug("TakePhotoSimulation: Progress indicator updated.");
+
+            // Prepare the UI for showing the taken photo preview
+            CameraPlaceholderImage.Visibility = Visibility.Collapsed; // Hide the live feed/placeholder
+            App.Logger.Debug("TakePhotoSimulation: CameraPlaceholderImage hidden.");
+
+            if(!String.IsNullOrEmpty(capturedImagePath))
+            { 
+                TakenPhotoImage.Source = new BitmapImage(new Uri(capturedImagePath)); // Set the image source for the preview
+                App.Logger.Debug($"TakePhotoSimulation: TakenPhotoImage source set to picture taken at {capturedImagePath}.");
+            }
+            else
+            {
+                App.Logger.Error("TakePhotoSimulation: No valid captured image path provided, cannot set preview.");
+            }
+
+            // Ensure the RenderTransform is set up correctly for animations and reset its initial state (scaled down, transparent)
+            if (TakenPhotoImage.RenderTransform is not ScaleTransform)
+            {
+                TakenPhotoImage.RenderTransform = new ScaleTransform { ScaleX = 0.5, ScaleY = 0.5 };
+                TakenPhotoImage.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+                App.Logger.Debug("TakePhotoSimulation: ScaleTransform for TakenPhotoImage initialized.");
+            }
+            // Explicitly set initial scale for the "zoom in" effect
+            ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleX = 0.5;
+            ((ScaleTransform)TakenPhotoImage.RenderTransform).ScaleY = 0.5;
+            TakenPhotoImage.Opacity = 0; // Start transparent for fade-in effect
+            App.Logger.Debug("TakePhotoSimulation: TakenPhotoImage initial transform and opacity reset for animation.");
+
+            // --- Animation to show the taken photo (Zoom in and Fade in) ---
+            App.Logger.Verbose("TakePhotoSimulation: Starting 'show photo' animation for TakenPhotoImage.");
+            var scaleXAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var scaleYAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500), EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 } };
+            var fadeInAnim = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(400) };
+
+            Storyboard showPhotoSb = new Storyboard();
+            Storyboard.SetTarget(scaleXAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXAnim, "ScaleX");
+            Storyboard.SetTarget(scaleYAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYAnim, "ScaleY");
+            Storyboard.SetTarget(fadeInAnim, TakenPhotoImage); Storyboard.SetTargetProperty(fadeInAnim, "Opacity");
+
+            showPhotoSb.Children.Add(scaleXAnim);
+            showPhotoSb.Children.Add(scaleYAnim);
+            showPhotoSb.Children.Add(fadeInAnim);
+            showPhotoSb.Begin();
+
+            // Wait for the photo to be displayed on screen for a set duration
+            App.Logger.Verbose("TakePhotoSimulation: Photo preview animation started. Waiting for display duration (2500ms).");
+            await Task.Delay(2500);
+            App.Logger.Verbose("TakePhotoSimulation: Photo display duration complete.");
+
+            // --- Animation to hide the taken photo (Fade out and optionally Zoom out) ---
+            App.Logger.Verbose("TakePhotoSimulation: Starting 'hide photo' animation for TakenPhotoImage.");
+            var scaleXResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
+            var scaleYResetAnim = new DoubleAnimation { To = 0.5, Duration = TimeSpan.FromMilliseconds(300), EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn } };
+            var fadeOutAnimPhoto = new DoubleAnimation { To = 0.0, Duration = TimeSpan.FromMilliseconds(300) };
+
+            Storyboard hidePhotoSb = new Storyboard();
+            Storyboard.SetTarget(fadeOutAnimPhoto, TakenPhotoImage); Storyboard.SetTargetProperty(fadeOutAnimPhoto, "Opacity");
+            hidePhotoSb.Children.Add(fadeOutAnimPhoto);
+
+            // Only apply the zoom-out part of the hide animation if there are more photos to take.
+            // This prepares the ScaleTransform for the next photo's "zoom-in" or resets it if going to gallery.
+            if (_photosTaken < TOTAL_PHOTOS_TO_TAKE)
+            {
+                App.Logger.Verbose("TakePhotoSimulation: More photos to take, adding scale reset to hide animation.");
+                Storyboard.SetTarget(scaleXResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleXResetAnim, "ScaleX");
+                Storyboard.SetTarget(scaleYResetAnim, (ScaleTransform)TakenPhotoImage.RenderTransform); Storyboard.SetTargetProperty(scaleYResetAnim, "ScaleY");
+                hidePhotoSb.Children.Add(scaleXResetAnim);
+                hidePhotoSb.Children.Add(scaleYResetAnim);
+            }
+            hidePhotoSb.Begin();
+
+            // Wait for the hide animation to complete
+            await Task.Delay(300);
+            App.Logger.Verbose("TakePhotoSimulation: 'Hide photo' animation complete.");
+
+            // Proceed to the next step in the photo capture sequence (either another countdown or the review screen)
+            App.Logger.Debug("TakePhotoSimulation: Proceeding to StartNextPhotoCapture.");
+            await StartNextPhotoCapture();
+            App.Logger.Debug("TakePhotoSimulation: StartNextPhotoCapture method finished.");
+        }
+        
+        // Helper methode voor foutdialogen (nieuw)
+        private async Task ShowCaptureErrorDialogAsync(string title, string content)
+        {
+            ContentDialog errorDialog = new ContentDialog
+            {
+                Title = title,
+                Content = content,
+                CloseButtonText = "Ok",
+                XamlRoot = this.XamlRoot // Belangrijk voor ContentDialog in WinUI3
+            };
+            await errorDialog.ShowAsync();
+        }
+
+        private async Task ShowAllPhotosForReview()
+        {
+            App.State = App.PhotoBoothState.ReviewingPhotos;
+            App.Logger?.Debug("PhotoBoothPage: Showing photos for review.");
+
+            CaptureElementsViewbox.Visibility = Visibility.Collapsed;
+            TakenPhotoImage.Opacity = 0;
+            ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
+
+            bool useHorizontalLayout = App.CurrentSettings?.HorizontalReviewLayout ?? true; // Default naar horizontaal als setting niet bestaat
+            App.Logger?.Debug("PhotoBoothPage: Review layout will be {Layout}. HorizontalReviewLayout setting is {SettingValue}",
+                useHorizontalLayout ? "Horizontal" : "Vertical", App.CurrentSettings?.HorizontalReviewLayout);
+
+            // Bepaal welke galerij en welke image controls te gebruiken
+            Viewbox activeGalleryContainer;
+            Microsoft.UI.Xaml.Controls.Image reviewPhoto1, reviewPhoto2, reviewPhoto3;
+
+            if (useHorizontalLayout)
+            {
+                activeGalleryContainer = HorizontalPhotoGalleryContainer;
+                VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+                reviewPhoto1 = H_Photo1Image;
+                reviewPhoto2 = H_Photo2Image;
+                reviewPhoto3 = H_Photo3Image;
+                App.Logger?.Debug("PhotoBoothPage: Using HorizontalPhotoGallery.");
+            }
+            else
+            {
+                activeGalleryContainer = VerticalPhotoGalleryContainer;
+                HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+                reviewPhoto1 = V_Photo1Image;
+                reviewPhoto2 = V_Photo2Image;
+                reviewPhoto3 = V_Photo3Image;
+                App.Logger?.Debug("PhotoBoothPage: Using VerticalPhotoGallery.");
+            }
+
+            // Reset de bronnen voor het geval er minder dan 3 foto's zijn
+            reviewPhoto1.Source = null;
+            reviewPhoto2.Source = null;
+            reviewPhoto3.Source = null;
+
+            // Populate de actieve galerij
+            if (_photoPaths.Count > 0 && !string.IsNullOrEmpty(_photoPaths[0]))
+                reviewPhoto1.Source = new BitmapImage(new Uri(_photoPaths[0]));
+            else
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 1 is leeg of null.");
+
+            if (_photoPaths.Count > 1 && !string.IsNullOrEmpty(_photoPaths[1]))
+                reviewPhoto2.Source = new BitmapImage(new Uri(_photoPaths[1]));
+            else if (_photoPaths.Count > 1)
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 2 is leeg of null.");
+
+
+            if (_photoPaths.Count > 2 && !string.IsNullOrEmpty(_photoPaths[2]))
+                reviewPhoto3.Source = new BitmapImage(new Uri(_photoPaths[2]));
+            else if (_photoPaths.Count > 2)
+                App.Logger?.Warning("PhotoBoothPage: Path voor foto 3 is leeg of null.");
+
+
+            activeGalleryContainer.Opacity = 0;
+            ActionButtonsPanel.Opacity = 0; // Knoppen blijven hetzelfde
+            activeGalleryContainer.Visibility = Visibility.Visible;
+            ActionButtonsPanel.Visibility = Visibility.Visible;
+
+            // Animatie voor galerij en knoppen
+            var galleryFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
+            Storyboard.SetTarget(galleryFadeIn, activeGalleryContainer); Storyboard.SetTargetProperty(galleryFadeIn, "Opacity");
+
+            var buttonsFadeIn = new DoubleAnimation { To = 1.0, Duration = TimeSpan.FromMilliseconds(500) };
+            Storyboard.SetTarget(buttonsFadeIn, ActionButtonsPanel); Storyboard.SetTargetProperty(buttonsFadeIn, "Opacity");
+
+            Storyboard reviewSb = new Storyboard();
+            reviewSb.Children.Add(galleryFadeIn);
+            reviewSb.Children.Add(buttonsFadeIn);
+            reviewSb.Begin();
+
+            _reviewPageTimeoutTimer.Start(); // Start inactiviteitstimer
+            // await Task.CompletedTask; // Niet meer nodig als de methode async void is, maar kan geen kwaad
+        }
+
+        private async void AcceptButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Review timer is stopped when the user interacts with the accept button
+            _reviewPageTimeoutTimer.Stop();
+            App.Logger?.Debug("PhotoBoothPage: Accept button clicked, review timeout timer stopped.");
+
+            // Handle the accept button click event
+            App.Logger?.Information($"PhotoBoothPage: Accept button clicked. Current state: {App.State}");
+
+            if (App.State != App.PhotoBoothState.ReviewingPhotos)
+            {
+                App.Logger?.Warning($"PhotoBoothPage: Accept button clicked, but not in reviewing state. Current state: {App.State}");
+                return;
+            }
+
+            // Proceed to save the photos
+            App.State = App.PhotoBoothState.Saving;
+            ProgressIndicatorPanel.Visibility = Visibility.Collapsed;
+            HorizontalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            VerticalPhotoGalleryContainer.Visibility = Visibility.Collapsed;
+            ActionButtonsPanel.Visibility = Visibility.Collapsed;
+
+            #region Fade-in of overlay
+            // --- Start of Fade-in Logic for OverlayGrid ---
+            App.Logger?.Verbose($"PhotoBoothPage: Started fade-in logic for overlayGrid");
+
+            OverlayGrid.Opacity = 0; // Start fully transparent
+            OverlayGrid.Visibility = Visibility.Visible; // Make it visible but transparent
+            OverlayText.Text = App.CurrentSettings?.UiSavingMessage ?? "Saving...";
+
+            // Create and start the fade-in animation
+            var fadeInAnimation = new DoubleAnimation
+            {
+                To = 1.0, // Fade to fully opaque
+                Duration = TimeSpan.FromMilliseconds(300), // Adjust duration as needed (e.g., 300-500ms)
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } // Smooth easing
+            };
+            Storyboard.SetTarget(fadeInAnimation, OverlayGrid);
+            Storyboard.SetTargetProperty(fadeInAnimation, "Opacity");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fadeInAnimation);
+            storyboard.Begin();
+
+            App.Logger?.Verbose($"PhotoBoothPage: Fade-in logic for overlayGrid completed");
+            // --- End of Fade-in Logic for OverlayGrid ---
+            #endregion
+
+            // File names and paths
+            string finalPhotoStripPathOnDisk = null; // Om het pad naar de samengevoegde afbeelding op te vangen
+            string uniqueFileId = Guid.NewGuid().ToString("N"); // Genereer GUID zonder streepjes voor een kortere bestandsnaam
+            string publicUrlForQrCode = null;
+
+            // Simulate saving process 
+            #region Merge and save
+            App.Logger?.Information("PhotoBoothPage: Starting photo processing and merging after user accept.");
+
+
+            // Zorg ervoor dat _photoPaths correct gevuld is met de paden naar de 3 genomen foto's
+            // en dat de template pad in settings beschikbaar is.
+            if (App.CurrentSettings != null &&
+                !string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath) &&
+                _photoPaths != null &&
+                _photoPaths.Count == TOTAL_PHOTOS_TO_TAKE &&
+                _photoPaths.All(p => !string.IsNullOrEmpty(p) && File.Exists(p))) // Controleer of alle paden valide zijn en bestaan
+            {
+                // Roep de nieuwe methode aan
+                finalPhotoStripPathOnDisk = await ProcessAndMergePhotosAsync(App.CurrentSettings.PhotoStripFilePath, _photoPaths);
+            }
+            else
+            {
+                // TODO: a severe error has occured
+                // TODO: show a popup to the user
+                App.Logger?.Error("PhotoBoothPage: Cannot start merge process. Conditions not met (Settings, TemplatePath, or PhotoPaths invalid/incomplete).");
+                if (App.CurrentSettings == null) App.Logger?.Error(" - App.CurrentSettings is null.");
+                if (App.CurrentSettings != null && string.IsNullOrEmpty(App.CurrentSettings.PhotoStripFilePath)) App.Logger?.Error(" - PhotoStripFilePath is empty.");
+                if (_photoPaths == null) App.Logger?.Error(" - _photoPaths is null.");
+                if (_photoPaths != null && _photoPaths.Count != TOTAL_PHOTOS_TO_TAKE) App.Logger?.Error(" - _photoPaths count is not {TOTAL_PHOTOS_TO_TAKE}. Actual: {_photoPaths.Count}");
+                if (_photoPaths != null)
+                {
+                    for (int i = 0; i < _photoPaths.Count; i++)
+                    {
+                        if (string.IsNullOrEmpty(_photoPaths[i]) || !File.Exists(_photoPaths[i]))
+                        {
+                            App.Logger?.Error($" - _photoPaths[{i}] is invalid or file does not exist: '{_photoPaths[i]}'");
+                        }
                     }
                 }
             }
-            catch (TaskCanceledException)
+            #endregion
+
+
+            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
+
+            #region S3 upload
+            // If the merge was successful, upload to S3 and get the public URL
+            if (App.CurrentSettings.EnableUploading)
             {
-                // Expected when stopping
+                App.Logger?.Information("PhotoBoothPage: Uploading is enabled. Proceeding with upload.");
+
+                if (!string.IsNullOrEmpty(finalPhotoStripPathOnDisk))
+                {
+                    App.Logger?.Debug("PhotoBoothPage: Final image for upload at: {FinalImagePath}", finalPhotoStripPathOnDisk);
+
+                    // ---- UPLOAD TO S3/MINIO ----
+                    if (_s3Service != null)
+                    {
+                        OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Uploading...";
+                        App.State = App.PhotoBoothState.Uploading;
+                        string prefix = $"{DateTime.UtcNow:yyyyMMdd}";
+                        string objectKeyStrip = $"strips/{prefix}/{uniqueFileId}{Path.GetExtension(finalPhotoStripPathOnDisk)}";
+                        App.Logger?.Information("PhotoBoothPage: Attempting to upload photostrip to S3/MinIO with key: {ObjectKey}", objectKeyStrip);
+
+                        // TODO: check if this can raise exceptions that needs to be caught
+                        publicUrlForQrCode = await _s3Service.UploadFileAsync(finalPhotoStripPathOnDisk, objectKeyStrip);
+
+                        if (!string.IsNullOrEmpty(publicUrlForQrCode))
+                        {
+                            App.Logger?.Information("PhotoBoothPage: Photostrip uploaded successfully. Public URL: {PublicUrl}", publicUrlForQrCode);
+                        }
+                        else
+                        {
+                            App.Logger?.Error($"PhotoBoothPage: Failed to upload photostrip to S3/MinIO. The publicUrlForQrCode received from S3 service: {publicUrlForQrCode}");
+                            OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                        }
+
+                        // Upload individual pictures (single shots) async, do not wait for QR
+                        _ = Task.Run(async () =>
+                        {
+                            App.Logger?.Information("PhotoBoothPage: Starting background upload of individual photos.");
+                            for (int i = 0; i < _photoPaths.Count; i++)
+                            {
+                                if (!string.IsNullOrEmpty(_photoPaths[i]) && File.Exists(_photoPaths[i]))
+                                {
+                                    string originalPhotoName = Path.GetFileName(_photoPaths[i]);
+
+                                    // Generate a key, based on the photo strip prepend and shot nummer
+                                    //string stripFilePrepend = Path.GetFileNameWithoutExtension(finalPhotoStripPathOnDisk).Replace("_photoStrip", "");
+                                    string objectKeyOriginal = $"originals/{prefix}/{uniqueFileId}_shot{i + 1}{Path.GetExtension(_photoPaths[i])}";
+
+                                    App.Logger?.Debug($"PhotoBoothPage: Attempting to upload original photo {i + 1} ({originalPhotoName}) to S3/MinIO with key: {objectKeyOriginal}");
+                                    string uploadedOriginalUrl = await _s3Service.UploadFileAsync(_photoPaths[i], objectKeyOriginal);
+                                    if (!string.IsNullOrEmpty(uploadedOriginalUrl))
+                                    {
+                                        App.Logger?.Debug("PhotoBoothPage: Original photo {Index} uploaded successfully to {Url}", i + 1, uploadedOriginalUrl);
+                                    }
+                                    else
+                                    {
+                                        App.Logger?.Error("PhotoBoothPage: Failed to upload original photo {Index} ({FilePath})", i + 1, _photoPaths[i]);
+                                    }
+                                }
+                            }
+                            App.Logger?.Information("PhotoBoothPage: Background upload of individual photos finished.");
+                        });
+                    }
+                    else
+                    {
+                        App.Logger?.Error("PhotoBoothPage: S3Service is not initialized. Cannot upload files.");
+                        OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                        await Task.Delay(2_000);
+                    }
+                    // ---- EINDE UPLOAD ----
+                }
+                else
+                {
+                    App.Logger?.Error($"PhotoBoothPage: Processing failed while uploading. Path in finalPhotoStripPathOnDisk is empty. Skipping upload.");
+                    OverlayText.Text = App.CurrentSettings?.UiUploadError ?? "Upload failed!";
+                    await Task.Delay(2_000); // Wacht even zodat gebruiker de (upload) status kan zien
+                }
+            }
+            else
+            {
+                App.Logger?.Information("PhotoBoothPage: Uploading is disabled. Skipping upload step.");
+            }
+                
+            // Show the overlay with a printing instruction text if printing is enabled
+            if (App.CurrentSettings?.EnablePrinting ?? false)
+            {
+                TimeSpan printedTimeDifference = (DateTime.Now - App.lastPrintTime);
+                // Retrieve texts
+                if ((App.lastPrintTime == null) || (printedTimeDifference > new TimeSpan(0, 10, 0)))
+                {
+                    PrintInstructionText.Text = App.CurrentSettings?.UiPrintingWarmingUpMessage ?? "Printer is warming up, this can take a short while...";
+                }
+                else
+                {
+                    PrintInstructionText.Text = App.CurrentSettings?.UiPrintingWarmingUpMessage ?? "Printing your picture...";
+                }
+
+                OverlayText.Visibility = Visibility.Visible;
+                PrintInstructionText.Visibility = Visibility.Visible;
+
+            }
+
+            // if uploading and QR code showing is enabled
+            if ((App.CurrentSettings?.EnableShowQr ?? false) && (App.CurrentSettings?.EnableUploading ?? false))
+            {
+                App.Logger?.Debug("PhotoBoothPage: QR code showing after upload is enabled.");
+
+                OverlayText.Visibility = Visibility.Collapsed; // Verberg "Uploaden..." tekst
+
+                BitmapImage qrCodeBitmap = await GenerateQrCodeAsync(publicUrlForQrCode);
+                if (qrCodeBitmap != null)
+                {
+                    QrCodeImage.Source = qrCodeBitmap;
+                    QrCodeBorder.Visibility = Visibility.Visible;
+                    QrCodeInstructionText.Visibility = Visibility.Visible;
+                    CloseQrButton.Visibility = Visibility.Visible; // Ok or finish button to manually stop the QR code display
+                    App.State = App.PhotoBoothState.ShowingQrCode; // Nieuwe state
+                    App.Logger?.Information($"PhotoBoothPage: Showing QR Code with link to {publicUrlForQrCode}");
+
+                    // Start QR Code timeout timer
+                    int qrTimeoutSeconds = App.CurrentSettings.QrCodeTimeoutSeconds > 0 ? App.CurrentSettings.QrCodeTimeoutSeconds : 30;
+                    _qrPageTimeoutTimer.Interval = TimeSpan.FromSeconds(qrTimeoutSeconds);
+                    _qrPageTimeoutTimer.Start();
+                    App.Logger?.Information($"PhotoBoothPage: QR code display timeout set to {qrTimeoutSeconds} seconds.");
+                    return; // Stop the flow here, the QR timer handles further navigation 
+                }
+                else
+                {
+                    App.Logger?.Error("PhotoBoothPage: Failed to generate QR code image.");
+                    OverlayText.Text = App.CurrentSettings?.UiQrError ?? "Cannot create QR code!";
+                    OverlayText.Visibility = Visibility.Visible;
+                }
+
+            }
+            else
+            {
+                App.Logger?.Debug("PhotoBoothPage: QR code showing after upload is disabled.");
+            }          
+            #endregion
+
+            OverlayText.Text = App.CurrentSettings?.UiDoneMessage ?? "Done!";
+            await Task.Delay(1500); // Original delay, this show the 'Done!' message on the screen
+
+            // If no error occurred, proceed to the next step
+            // we do not need to remove the overlay, the whole page is faded out and it will look nice
+
+            //#region Fade-out overlay
+            //// --- Optional: Fade out OverlayGrid ---
+            //// If you want it to fade out instead of abruptly disappearing:
+            //var fadeOutAnimation = new DoubleAnimation
+            //{
+            //    To = 0.0,
+            //    Duration = TimeSpan.FromMilliseconds(300),
+            //    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            //};
+            //Storyboard.SetTarget(fadeOutAnimation, OverlayGrid);
+            //Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+
+            //var storyboardOut = new Storyboard();
+            //storyboardOut.Children.Add(fadeOutAnimation);
+            //storyboardOut.Completed += (s, ev) => {
+            //    OverlayGrid.Visibility = Visibility.Collapsed; // Hide it after fade out completes
+            //};
+            //storyboardOut.Begin();
+            //await Task.Delay(300); // Only if you need to wait for fade-out before navigating
+            //// --- End of Optional Fade out ---
+            //#endregion
+
+            // If not fading out, just hide it:
+            //// OverlayGrid.Visibility = Visibility.Collapsed; // Original way to hide
+
+            App.State = App.PhotoBoothState.Finished; // Use App.State
+
+            NavigateBackToMainPage("Accepted"); // Call your refactored navigation method
+        }
+
+        private async void RetakeButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Review timer is stopped when the user interacts with the retake button
+            _reviewPageTimeoutTimer.Stop();
+            App.Logger?.Debug("PhotoBoothPage: Retake button clicked, review timeout timer stopped.");
+
+            if (App.State != App.PhotoBoothState.ReviewingPhotos && App.State != App.PhotoBoothState.Finished)
+            {
+                return;
+            }
+            await StartPhotoProcedure();
+        }
+
+        private void CloseQrButton_Click(object sender, RoutedEventArgs e)
+        {
+            App.Logger?.Debug("PhotoBoothPage: Close QR button clicked.");
+            _qrPageTimeoutTimer.Stop(); // Stop the timeout timer
+
+            // Hide QR elements and OverlayGrid for fade-out of the page
+            QrCodeBorder.Visibility = Visibility.Collapsed;
+            QrCodeInstructionText.Visibility = Visibility.Collapsed;
+            CloseQrButton.Visibility = Visibility.Collapsed; // Hide the button
+            OverlayText.Visibility = Visibility.Collapsed;
+
+            App.State = App.PhotoBoothState.Finished; 
+            NavigateBackToMainPage("QrCodeClosedManually");
+        }
+
+        // Timer tick event handler
+        private void ReviewPageTimeoutTimer_Tick(object sender, object e)
+        {
+            _reviewPageTimeoutTimer.Stop(); // Stop the timer
+            App.Logger?.Debug("PhotoBoothPage: Review page inactivity timeout reached. Navigating back to MainPage.");
+
+            // Navigate back to MainPage
+            // Ensure App.State is reset or indicates returning to idle from timeout
+            App.State = App.PhotoBoothState.ReviewingPhotosTimedOut; // Or a specific "TimedOut" state if you want to track it
+
+            // Call the method to navigate back to MainPage
+            NavigateBackToMainPage("Timeout"); // Call the extracted method
+        }
+
+        // Event Handler for QR Page Timeout
+        private void QrPageTimeoutTimer_Tick(object sender, object e)
+        {
+            _qrPageTimeoutTimer.Stop();
+            App.Logger?.Debug("PhotoBoothPage: QR code display timeout reached. Navigating back to MainPage.");
+
+            // Hide QR elements and OverlayGrid for fade-out of the page
+            QrCodeBorder.Visibility = Visibility.Collapsed;
+            QrCodeInstructionText.Visibility = Visibility.Collapsed; // Hide instruction text
+            OverlayText.Visibility = Visibility.Collapsed; // Hide error messages
+            CloseQrButton.Visibility = Visibility.Collapsed; // Hide OK button
+            // OverlayGrid zelf wordt meegepakt in de page fade-out in NavigateBackToMainPage
+
+            App.State = App.PhotoBoothState.QrCodeTimedOut; // Of terug naar Finished/Idle
+            NavigateBackToMainPage("QrCodeTimeout");
+        }
+
+        private async void NavigateBackToMainPage(string reason)
+        {
+            App.Logger?.Information("PhotoBoothPage: Navigating back to MainPage. Reason: {Reason}", reason);
+
+            #region Fade out page
+            // --- Fade out the current page (PhotoBoothPage) ---
+            var pageRoot = this.Content as UIElement; // Assuming 'this.Content' is your page's root container like RootGrid
+            if (pageRoot != null)
+            {
+                var fadeOutAnimation = new DoubleAnimation
+                {
+                    To = 0.0,
+                    Duration = TimeSpan.FromMilliseconds(250), // Adjust duration as needed
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(fadeOutAnimation, pageRoot);
+                Storyboard.SetTargetProperty(fadeOutAnimation, "Opacity");
+
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(fadeOutAnimation);
+
+                // Create a TaskCompletionSource to await the animation's completion
+                var tcs = new TaskCompletionSource<bool>();
+                storyboard.Completed += (s, e_sb) => tcs.SetResult(true);
+
+                storyboard.Begin();
+                await tcs.Task; // Wait for the fade-out to complete
+                App.Logger?.Verbose("PhotoBoothPage: Fade out complete.");
+            }
+            else
+            {
+                App.Logger?.Warning("PhotoBoothPage: Could not find page root for fade-out animation.");
+            }
+            // --- End of Fade out ---
+            #endregion
+
+            #region Perform actual navigation
+            // Attempt to find the root frame and navigate
+            Frame rootFrame = null;
+            if (App.MainWindow.Content is Frame appRootFrame)
+            {
+                rootFrame = appRootFrame;
+            }
+            else if (this.Frame != null) // Fallback to this page's frame
+            {
+                rootFrame = this.Frame;
+            }
+
+            if (rootFrame != null)
+            {
+                if (rootFrame.CanGoBack)
+                {
+                    App.Logger?.Debug("PhotoBoothPage: Navigating back using rootFrame.GoBack().");
+                    rootFrame.GoBack();
+                }
+                else
+                {
+                    App.Logger?.Debug("PhotoBoothPage: rootFrame cannot GoBack(), navigating directly to MainPage type.");
+                    rootFrame.Navigate(typeof(MainPage)); // Navigate to MainPage type, clears backstack for this frame
+                }
+            }
+            else
+            {
+                App.Logger?.Error("PhotoBoothPage: Could not find a suitable Frame to navigate back to MainPage.");
+            }
+            #endregion
+        }
+
+        // Generate a QR code
+        private async Task<BitmapImage> GenerateQrCodeAsync(string payload)
+        {
+            if (string.IsNullOrEmpty(payload)) return null;
+
+            try
+            {
+                App.Logger?.Debug("PhotoBoothPage: Generating QR code for payload: {Payload}", payload);
+                QRCodeGenerator qrGenerator = new QRCodeGenerator();
+                QRCodeData qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q); // ECCLevel.Q is 25% error correction
+
+                // QRCoder.BitmapByteQRCode genereert een byte array voor een BMP
+                BitmapByteQRCode qrCode = new BitmapByteQRCode(qrCodeData);
+                byte[] qrCodeAsBitmapByteArr = qrCode.GetGraphic(20); // pixelsPerModule: 20
+
+                // Converteer byte array naar BitmapImage voor WinUI
+                using (var ms = new InMemoryRandomAccessStream())
+                {
+                    using (var writer = new DataWriter(ms.GetOutputStreamAt(0)))
+                    {
+                        writer.WriteBytes(qrCodeAsBitmapByteArr);
+                        await writer.StoreAsync();
+                    }
+                    var image = new BitmapImage();
+                    await image.SetSourceAsync(ms);
+                    App.Logger?.Information("PhotoBoothPage: QR code BitmapImage generated successfully.");
+                    return image;
+                }
             }
             catch (Exception ex)
             {
-                App.Logger.Error(ex, "LiveView display loop error");
+                App.Logger?.Error(ex, "PhotoBoothPage: Failed to generate QR code.");
+                return null;
             }
         }
 
+        private async Task<string> ProcessAndMergePhotosAsync(string templateOverlayPath, List<string> individualPhotoPaths)
+        {
+            #region Check inputs
+            if (string.IsNullOrEmpty(templateOverlayPath) || !File.Exists(templateOverlayPath))
+            {
+                App.Logger?.Error("ImageProcessing: Template overlay path is invalid or file does not exist: {TemplatePath}", templateOverlayPath);
+                return null;
+            }
 
+            if (individualPhotoPaths == null || individualPhotoPaths.Count != TOTAL_PHOTOS_TO_TAKE)
+            {
+                App.Logger?.Error("ImageProcessing: Incorrect number of photo paths provided. Expected {ExpectedCount}, got {ActualCount}.", TOTAL_PHOTOS_TO_TAKE, individualPhotoPaths?.Count ?? 0);
+                return null;
+            }
+
+            foreach (var photoPath in individualPhotoPaths)
+            {
+                if (string.IsNullOrEmpty(photoPath) || !File.Exists(photoPath))
+                {
+                    App.Logger?.Error("ImageProcessing: A provided photo path is invalid or file does not exist: {PhotoPath}", photoPath);
+                    return null;
+                }
+            }
+            #endregion
+
+            #region Retrieve composition settings
+            // Haal de compositie-instellingen op
+            var compositionSettings = App.CurrentSettings?.PhotoStripComposition;
+            if (compositionSettings == null)
+            {
+                App.Logger?.Error("ImageProcessing: PhotoStripComposition settings are missing. Aborting.");
+                // Optioneel: Gebruik hier hardcoded defaults als fallback of return null
+                // Voor nu gaan we ervan uit dat ze altijd geladen zijn (met defaults uit de constructor)
+                // Als je een expliciete fallback wilt:
+                // compositionSettings = new PhotoStripImageCompositionSettings(); 
+                return null; // Of gooi een exception
+            }
+            #endregion
+
+            string filenamePrepend = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+            // Get output folder path from settings or use default
+            string outputBaseFolderPath = App.CurrentSettings?.PhotoOutputPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "PhotoBoothOutput");
+
+            // Create the output folder if it doesn't exist
+            Directory.CreateDirectory(outputBaseFolderPath);
+
+            App.Logger?.Information("ImageProcessing: Starting merge with overlay. Template: {TemplatePath}. Output base: {OutputDirectory}", templateOverlayPath, outputBaseFolderPath);
+
+            try
+            {
+                using SixLabors.ImageSharp.Image<Rgba32> overlayTemplateImage = await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(templateOverlayPath);
+                App.Logger?.Debug("ImageProcessing: PNG Overlay Template '{TemplateName}' loaded ({Width}x{Height}).", Path.GetFileName(templateOverlayPath), overlayTemplateImage.Width, overlayTemplateImage.Height);
+
+                // Verwachte template afmetingen
+                const int expectedTemplateWidth = 1200;
+                const int expectedTemplateHeight = 3600;
+
+                if (overlayTemplateImage.Width != expectedTemplateWidth || overlayTemplateImage.Height != expectedTemplateHeight)
+                {
+                    App.Logger?.Warning("ImageProcessing: Template dimensions ({ActualWidth}x{ActualHeight}) do not match expected {ExpectedWidth}x{ExpectedHeight}. Results may vary.",
+                        overlayTemplateImage.Width, overlayTemplateImage.Height, expectedTemplateWidth, expectedTemplateHeight);
+                }
+
+                using (var photoCanvasImage = new Image<Rgba32>(overlayTemplateImage.Width, overlayTemplateImage.Height))
+                {
+                    App.Logger?.Debug("ImageProcessing: Created photo canvas ({Width}x{Height}).", photoCanvasImage.Width, photoCanvasImage.Height);
+
+                    var sourceImages = new List<Image<Rgba32>>(TOTAL_PHOTOS_TO_TAKE);
+                    try
+                    {
+                        for (int i = 0; i < TOTAL_PHOTOS_TO_TAKE; i++)
+                        {
+                            sourceImages.Add(await SixLabors.ImageSharp.Image.LoadAsync<Rgba32>(individualPhotoPaths[i]));
+                            App.Logger?.Debug("ImageProcessing: Photo {IndexPlusOne} '{PhotoName}' loaded.", i + 1, Path.GetFileName(individualPhotoPaths[i]));
+                        }
+
+                        int templateWidth = photoCanvasImage.Width;
+                        int templateHeight = photoCanvasImage.Height;
+
+                        // Gebruik waarden uit de settings
+                        int horizontalPaddingPerSide = compositionSettings.TemplateHorizontalPaddingPerSide;
+                        int photoAreaWidth = templateWidth - (2 * horizontalPaddingPerSide);
+
+                        int desiredTopMargin = compositionSettings.TemplateDesiredTopMargin;
+                        int desiredBottomMargin = compositionSettings.TemplateDesiredBottomMargin;
+                        int spacingBetweenPhotos = compositionSettings.SpacingBetweenPhotos;
+
+                        int totalVerticalSpaceForPhotosAndSpacing = templateHeight - desiredTopMargin - desiredBottomMargin;
+                        int photoSlotHeight = (totalVerticalSpaceForPhotosAndSpacing - ((TOTAL_PHOTOS_TO_TAKE - 1) * spacingBetweenPhotos)) / TOTAL_PHOTOS_TO_TAKE;
+
+                        App.Logger?.Verbose($"ImageProcessing: Horizontal Padding Per Side: {horizontalPaddingPerSide}, Total vertical space for photos and spacing: {totalVerticalSpaceForPhotosAndSpacing}, Desired Top Margin: {desiredTopMargin}, Desired Bottom Margin: {desiredBottomMargin}, " +
+                            $"Spacing Between Photos: {spacingBetweenPhotos}, Target Photo Area Width: {photoAreaWidth}, Target Photo Slot Height: {photoSlotHeight}");
+
+                        int currentY = desiredTopMargin; // Start Y-positie voor de eerste foto
+
+                        for (int i = 0; i < sourceImages.Count; i++)
+                        {
+                            var currentPhoto = sourceImages[i];
+                            var tempImage = currentPhoto.Clone();
+
+                            // Resize and crop the source photo to fill the "photo window" (photoAreaWidth x photoSlotHeight)**
+                            // We want to scale the photo so that it fills the slot, and then crop any excess.
+                            // The aspect ratio of the slot is photoAreaWidth / photoSlotHeight.
+                            float targetSlotAspectRatio = (float)photoAreaWidth / photoSlotHeight;
+                            float sourceAspectRatio = (float)tempImage.Width / tempImage.Height;
+
+                            int resizeWidth, resizeHeight;
+                            ResizeMode resizeMode; // ImageSharp's ResizeMode.Crop vult en snijdt bij.
+
+                            if (sourceAspectRatio > targetSlotAspectRatio)
+                            {
+                                // Source photo is wider (more landscape) than the target slot.
+                                // We scale so the height fits, and the width will then have excess to crop.
+                                App.Logger?.Debug($"Source photo is wider than target slot, scaling so it fits in height. Width will be cropped.");
+
+                                resizeHeight = photoSlotHeight;
+                                resizeWidth = (int)Math.Round(resizeHeight * sourceAspectRatio);
+                                resizeMode = ResizeMode.Crop; // Zal schalen op hoogte en dan breedte croppen
+                            }
+                            else
+                            {
+                                // Source photo is narrower/taller (more portrait) than or equal to the target slot.
+                                // We scale so the width fits, and the height will then have excess to crop.
+                                App.Logger?.Debug($"Source photo is taller than target slot, scaling so it fits in width. Height will be cropped.");
+
+                                resizeWidth = photoAreaWidth;
+                                resizeHeight = (int)Math.Round(resizeWidth / sourceAspectRatio);
+                                resizeMode = ResizeMode.Crop; // Zal schalen op breedte en dan hoogte croppen
+                            }
+
+                            // Use ResizeMode.Crop. ImageSharp first scales the image so that it covers the target area,
+                            // then crops the excess from the center.
+                            var resizeOptions = new ResizeOptions
+                            {
+                                Size = new Size(photoAreaWidth, photoSlotHeight), // De uiteindelijke afmetingen van de foto in het slot
+                                Mode = ResizeMode.Crop, // Vul het gebied en snijd overschot af
+                                Sampler = KnownResamplers.Lanczos3,
+                                Position = AnchorPositionMode.Center // Crop vanuit het midden
+                            };
+
+                            tempImage.Mutate(x => x.Resize(resizeOptions));
+                            App.Logger?.Debug($"ImageProcessing: Photo {i + 1} resized and cropped to {tempImage.Width}x{tempImage.Height} to fit slot.");
+
+                            // Na ResizeMode.Crop zouden tempImage.Width en tempImage.Height exact photoAreaWidth en photoSlotHeight moeten zijn.
+                            int finalPhotoWidth = tempImage.Width;
+                            int finalPhotoHeight = tempImage.Height;
+
+                            // X positie om horizontaal te centreren
+                            int targetX = horizontalPaddingPerSide;
+                            // Y positie is currentY (de bovenkant van het huidige slot)
+                            int targetY = currentY;
+
+                            photoCanvasImage.Mutate(x => x.DrawImage(tempImage, new Point(targetX, targetY), 1f));
+                            App.Logger?.Debug($"ImageProcessing: Photo {i + 1} drawn onto photo canvas at ({targetX},{targetY}) with final size {finalPhotoWidth}x{finalPhotoHeight}.");
+
+                            tempImage.Dispose();
+
+                            currentY += photoSlotHeight + spacingBetweenPhotos; // Update Y voor de bovenkant van het volgende foto slot
+                        }
+                        // ----- EINDE AANGEPASTE LOGICA VOOR FOTO PLAATSING -----
+                    }
+                    finally
+                    {
+                        foreach (var img in sourceImages) { img?.Dispose(); }
+                    }
+
+                    var graphicsOptions = new GraphicsOptions() { AlphaCompositionMode = PixelAlphaCompositionMode.SrcOver };
+                    photoCanvasImage.Mutate(ctx => ctx.DrawImage(overlayTemplateImage, new Point(0, 0), graphicsOptions));
+                    App.Logger?.Debug("ImageProcessing: PNG Overlay Template applied over photo canvas.");
+
+                    string outputFileName = $"{filenamePrepend}_PhotoStrip_Overlay.jpg";
+                    string finalOutputPath = Path.Combine(outputBaseFolderPath, outputFileName);
+
+                    var jpegEncoder = new JpegEncoder { Quality = 90 };
+                    await photoCanvasImage.SaveAsJpegAsync(finalOutputPath, jpegEncoder);
+                    App.Logger?.Information("ImageProcessing: Final composite photo strip saved to: {OutputPath}", finalOutputPath);
+
+                    // If printing is enabled and a hot folder path is set, copy the final output to the hot folder
+                    if (App.CurrentSettings.EnablePrinting && !string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    {
+                        string hotFolderPathString = App.CurrentSettings.HotFolderPath;
+                        try
+                        {
+                            if (Directory.Exists(hotFolderPathString))
+                            {
+                                string destinationHotFilePath = Path.Combine(hotFolderPathString, Path.GetFileName(finalOutputPath));
+                                // ... (unieke bestandsnaam logica voor hotfolder) ...
+                                int attempt = 0;
+                                string tempDestPath = destinationHotFilePath;
+                                while (File.Exists(tempDestPath))
+                                {
+                                    attempt++;
+                                    tempDestPath = Path.Combine(hotFolderPathString, $"{Path.GetFileNameWithoutExtension(finalOutputPath)}_{attempt}{Path.GetExtension(finalOutputPath)}");
+                                }
+                                destinationHotFilePath = tempDestPath;
+                                File.Copy(finalOutputPath, destinationHotFilePath);
+                                App.Logger?.Information($"ImageProcessing: Merged photo strip copied to HotFolder: {destinationHotFilePath}. From there it should be printed by printer utility.");
+                            }
+                            else
+                            {
+                                App.Logger?.Warning($"ImageProcessing: Hot folder path does not exist, cannot copy: {hotFolderPathString}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            App.Logger?.Error(ex, "ImageProcessing: Failed to copy merged photo strip to hot folder {HotFolderPath}", hotFolderPathString);
+                        }
+                    }
+                    else if (!App.CurrentSettings.EnablePrinting)
+                    {
+                        App.Logger?.Information("ImageProcessing: Printing is disabled, not copying to hot folder.");
+                    }
+                    else if (string.IsNullOrEmpty(App.CurrentSettings.HotFolderPath))
+                    {
+                        App.Logger?.Warning("ImageProcessing: Copy to HotFolder is enabled, but path is empty. Cannot copy to HotFolder.");
+                    }
+                    
+                    return finalOutputPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                App.Logger?.Error(ex, "ImageProcessing: A critical error occurred during the image merging process with overlay.");
+                return null;
+            }
+        }
     }
 }
