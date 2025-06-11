@@ -321,6 +321,19 @@ namespace WinUI3App
             }
         }
 
+        // Helper methode voor foutdialogen (nieuw)
+        private async Task ShowDialogAsync(string title, string content)
+        {
+            ContentDialog errorDialog = new ContentDialog
+            {
+                Title = title,
+                Content = content,
+                CloseButtonText = "Ok",
+                XamlRoot = this.XamlRoot // Belangrijk voor ContentDialog in WinUI3
+            };
+            await errorDialog.ShowAsync();
+        }
+
         private void CornerTouchTimer_Tick(object sender, object e)
         {
             // Remove touches that are outside the time window
@@ -355,9 +368,22 @@ namespace WinUI3App
             HandleCornerTouch("BottomRight");
         }
 
-        private void TakePhotoButton_Click(object sender, RoutedEventArgs e)
+        private async void TakePhotoButton_Click(object sender, RoutedEventArgs e)
         {
-            App.Logger?.Debug("MainPage: Photo capture initiated");
+            App.Logger?.Debug("MainPage: Photo capture button clicked");
+
+            if (App.AppCameraService.IsCameraAvailable)
+            {
+                App.Logger?.Debug("MainPage: Camera is available, proceeding to photo capture page.");
+            }
+            else
+            {
+                App.Logger?.Error("MainPage: Camera is not available, cannot proceed to photo capture page.");
+                // Show error message to user
+                await ShowDialogAsync("Camera Error", "Camera is not available. Please connect a camera and try again.");
+                return;
+            }
+
 
             // Start the live view process in the background without waiting for it to complete.
             if (App.AppCameraService != null)

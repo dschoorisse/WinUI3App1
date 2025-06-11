@@ -1187,6 +1187,8 @@ namespace WinUI3App1
             }
         }
 
+       
+
         public enum PhotoBoothState
         {
             Starting,

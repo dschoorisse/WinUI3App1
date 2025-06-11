@@ -526,27 +526,27 @@ namespace WinUI3App
                         // Voor nu, laat capturedImagePath null als het mislukt.
                         capturedImagePath = null;
                         // Toon een foutmelding aan de gebruiker via de UI.
-                        await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Kon de foto niet opslaan.");
+                        await ShowDialogAsync("Foto maken mislukt", "Kon de foto niet opslaan.");
                     }
                 }
                 catch (TimeoutException tex)
                 {
                     App.Logger.Error(tex, "PhotoBoothPage.TakePhotoSimulation: Timeout capturing photo.");
                     capturedImagePath = null;
-                    await ShowCaptureErrorDialogAsync("Foto maken mislukt", "Camera reageerde te traag.");
+                    await ShowDialogAsync("Foto maken mislukt", "Camera reageerde te traag.");
                 }
                 catch (CanonSdkException sdkEx)
                 {
                     App.Logger.Error(sdkEx, "PhotoBoothPage.TakePhotoSimulation: SDK error capturing photo: {ErrorMessage} (0x{ErrorCode:X})", sdkEx.Message, sdkEx.ErrorCode);
                     capturedImagePath = null;
                     // Gebruik de CameraErrorOccurred event string als die relevant is, of een generieke.
-                    await ShowCaptureErrorDialogAsync("Camerafout", $"Technische fout: {sdkEx.Message}");
+                    await ShowDialogAsync("Camerafout", $"Technische fout: {sdkEx.Message}");
                 }
                 catch (Exception ex)
                 {
                     App.Logger.Error(ex, "PhotoBoothPage.TakePhotoSimulation: Generic error capturing photo.");
                     capturedImagePath = null;
-                    await ShowCaptureErrorDialogAsync("Fout", "Er is een onbekende fout opgetreden bij het maken van de foto.");
+                    await ShowDialogAsync("Fout", "Er is een onbekende fout opgetreden bij het maken van de foto.");
                 }
             }
             else
@@ -556,7 +556,7 @@ namespace WinUI3App
                 App.Logger.Error("PhotoBoothPage.TakePhotoSimulation: CameraService not available or camera not ready.");
                 // capturedImagePath = PLACEHOLDER_IMAGE_PATH; // Noodoplossing
                 capturedImagePath = null;
-                await ShowCaptureErrorDialogAsync("Camera niet beschikbaar", "Controleer of de camera is aangesloten en probeer opnieuw.");
+                await ShowDialogAsync("Camera niet beschikbaar", "Controleer of de camera is aangesloten en probeer opnieuw.");
             }
             // --- EINDE ECHTE FOTO CAPTURE ---
 
@@ -664,7 +664,7 @@ namespace WinUI3App
         }
         
         // Helper methode voor foutdialogen (nieuw)
-        private async Task ShowCaptureErrorDialogAsync(string title, string content)
+        private async Task ShowDialogAsync(string title, string content)
         {
             ContentDialog errorDialog = new ContentDialog
             {
