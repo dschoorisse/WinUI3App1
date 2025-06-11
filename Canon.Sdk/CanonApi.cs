@@ -77,7 +77,7 @@ namespace Canon.Sdk.Core
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in camera added handler: {ex.Message}");
+                _logger.Error($"CanonApi: Error in camera added handler: {ex.Message}");
             }
 
             return EDSDK.EDS_ERR_OK;
@@ -85,7 +85,7 @@ namespace Canon.Sdk.Core
 
         public CameraList GetCameraList()
         {
-            _logger.Error("GetCameraList IS CALLED>>>> LOGGER IS WORKING FROM SDK WRAPPER");
+            _logger.Debug("CanonApi: GetCameraList called...");
             ThrowIfDisposed();
 
             if (!_initialized)
@@ -94,7 +94,9 @@ namespace Canon.Sdk.Core
             IntPtr cameraList;
             uint err = EDSDK.EdsGetCameraList(out cameraList);
             if (err != EDSDK.EDS_ERR_OK)
+            {
                 throw new CanonSdkException($"Failed to get camera list: {err}", err);
+            }
 
             return new CameraList(cameraList, _logger);
         }
@@ -107,6 +109,8 @@ namespace Canon.Sdk.Core
 
         public void Dispose()
         {
+            _logger.Debug("CanonApi: Disposing CanonApi...");
+
             if (_disposed)
                 return;
 
@@ -119,6 +123,7 @@ namespace Canon.Sdk.Core
                 _initialized = false;
             }
 
+            _logger.Debug("CanonApi: Disposed CanonApi!");
             _disposed = true;
         }
     }
