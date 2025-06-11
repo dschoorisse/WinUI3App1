@@ -4,6 +4,7 @@ using System;
 using System.Runtime.InteropServices;
 using Canon.Sdk.Events;
 using Canon.Sdk.Exceptions;
+using Canon.Sdk.Logging;
 using EDSDKLib;
 
 namespace Canon.Sdk.Core
@@ -15,9 +16,11 @@ namespace Canon.Sdk.Core
         private EDSDK.EdsCameraAddedHandler _cameraAddedHandler;
         private GCHandle _cameraAddedHandlerHandle;
         private Action<Camera> _onCameraAdded;
+        private readonly ILogger _logger;
 
-        public CanonAPI()
+        public CanonAPI(ILogger logger)
         {
+            _logger = logger;
             _initialized = false;
             _disposed = false;
         }
@@ -82,6 +85,7 @@ namespace Canon.Sdk.Core
 
         public CameraList GetCameraList()
         {
+            _logger.Error("GetCameraList IS CALLED>>>> LOGGER IS WORKING FROM SDK WRAPPER");
             ThrowIfDisposed();
 
             if (!_initialized)
@@ -92,7 +96,7 @@ namespace Canon.Sdk.Core
             if (err != EDSDK.EDS_ERR_OK)
                 throw new CanonSdkException($"Failed to get camera list: {err}", err);
 
-            return new CameraList(cameraList);
+            return new CameraList(cameraList, _logger);
         }
 
         private void ThrowIfDisposed()

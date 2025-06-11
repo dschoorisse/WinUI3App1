@@ -67,7 +67,8 @@ namespace WinUI3App1
             _logger.Information("CameraService: Initializing Canon SDK...");
             try
             {
-                _canonAPI = new CanonAPI();
+                var serilogAdapter = new SerilogSdkAdapter(_logger);
+                _canonAPI = new CanonAPI(serilogAdapter);
                 _canonAPI.Initialize();
                 _isSdkInitialized = true;
                 _logger.Information("CameraService: Canon SDK C# Wrapper Initialized.");

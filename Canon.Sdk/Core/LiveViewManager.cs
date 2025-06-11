@@ -90,8 +90,8 @@ namespace Canon.Sdk.Core
                     // Download and process a live view frame
                     DownloadEvfFrame();
 
-                    // Sleep to avoid overloading the camera
-                    Thread.Sleep(100);
+                    // Sleep to avoid overloading the camera // TODO: make this configurable
+                    Thread.Sleep(50);
                 }
                 catch (OperationCanceledException)
                 {

@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using Canon.Sdk.Exceptions;
+using Canon.Sdk.Logging;
 
 namespace Canon.Sdk.Core
 {
@@ -13,13 +14,15 @@ namespace Canon.Sdk.Core
     {
         private bool _disposed = false;
         private IntPtr _cameraListRef;
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Initializes a new instance of the CameraList class
         /// </summary>
         /// <param name="cameraListRef">The native camera list reference</param>
-        internal CameraList(IntPtr cameraListRef)
+        internal CameraList(IntPtr cameraListRef, ILogger logger)
         {
+            _logger = logger;
             _cameraListRef = cameraListRef;
         }
 
@@ -62,7 +65,7 @@ namespace Canon.Sdk.Core
                 throw new CanonSdkException("Failed to get camera at index", err);
             }
 
-            return new Camera(cameraRef);
+            return new Camera(cameraRef, _logger);
         }
 
         /// <summary>

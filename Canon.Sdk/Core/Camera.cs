@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading; // Toegevoegd voor Thread.Sleep
 using Canon.Sdk.Events;
 using Canon.Sdk.Exceptions;
+using Canon.Sdk.Logging;
 using EDSDKLib;
 
 namespace Canon.Sdk.Core
@@ -19,6 +20,7 @@ namespace Canon.Sdk.Core
         private CameraEventHandler _eventHandler; // Wordt geïnitialiseerd in de constructor
         private DeviceInfo _deviceInfo;
         private GCHandle _gcHandle;
+        private readonly ILogger _logger;
 
         // Event delegates
         private EDSDKLib.EDSDK.EdsPropertyEventHandler _propertyEventHandler;
@@ -62,8 +64,10 @@ namespace Canon.Sdk.Core
             }
         }
 
-        internal Camera(IntPtr cameraRef)
+        internal Camera(IntPtr cameraRef, ILogger logger)
         {
+            _logger = logger;
+
             if (cameraRef == IntPtr.Zero)
                 throw new ArgumentNullException(nameof(cameraRef), "Camera reference cannot be zero.");
 
