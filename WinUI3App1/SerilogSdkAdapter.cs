@@ -16,6 +16,7 @@ namespace WinUI3App1
         }
 
         // Implement the interface by forwarding calls to Serilog
+        public void Verbose(string message) => _serilogLogger.Verbose(message);
         public void Debug(string message) => _serilogLogger.Debug(message);
         public void Information(string message) => _serilogLogger.Information(message);
         public void Warning(string message) => _serilogLogger.Warning(message);
@@ -25,6 +26,13 @@ namespace WinUI3App1
                 _serilogLogger.Error(ex, message);
             else
                 _serilogLogger.Error(message);
+        }
+        public void Fatal(string message, Exception ex = null)
+        {
+            if (ex != null)
+                _serilogLogger.Fatal(ex, message);
+            else
+                _serilogLogger.Fatal(message);
         }
     }
 }
