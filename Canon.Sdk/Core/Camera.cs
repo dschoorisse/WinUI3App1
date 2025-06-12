@@ -1,6 +1,7 @@
 ﻿// Path: Canon.Sdk/Core/Camera.cs
 
 using System;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Threading; // Toegevoegd voor Thread.Sleep
 using Canon.Sdk.Events;
@@ -44,6 +45,8 @@ namespace Canon.Sdk.Core
         {
             get
             {
+                _logger.Verbose("CanonSdk.Core.Camera: Accessing DeviceInfo property...");
+
                 if (_disposed)
                     throw new ObjectDisposedException(nameof(Camera));
                 if (_cameraRef == IntPtr.Zero)
@@ -51,6 +54,9 @@ namespace Canon.Sdk.Core
 
                 if (_deviceInfo == null)
                 {
+
+                    _logger.Verbose("CanonSdk.Core.Camera: DeviceInfo property is null, retrieving from camera now...");
+
                     EDSDKLib.EDSDK.EdsDeviceInfo nativeDeviceInfo;
                     uint err = EDSDKLib.EDSDK.EdsGetDeviceInfo(_cameraRef, out nativeDeviceInfo);
 
@@ -76,6 +82,8 @@ namespace Canon.Sdk.Core
 
             _gcHandle = GCHandle.Alloc(this);
 
+
+            _logger.Verbose("CanonSdk.Core.Camera: Registering event handlers...");
             _propertyEventHandler = new EDSDKLib.EDSDK.EdsPropertyEventHandler(HandlePropertyEvent);
             _objectEventHandler = new EDSDKLib.EDSDK.EdsObjectEventHandler(HandleObjectEvent);
             _stateEventHandler = new EDSDKLib.EDSDK.EdsStateEventHandler(HandleStateEvent);
@@ -94,6 +102,8 @@ namespace Canon.Sdk.Core
         /// <exception cref="CanonSdkException">Thrown if the SDK command fails.</exception>
         public void SendCommand(uint command, int parameter = 0)
         {
+            _logger.Verbose($"CanonSdk.Core.Camera: SendCommand called, sending command {command} with parameter {parameter}...");
+
             if (_disposed)
                 throw new ObjectDisposedException(nameof(Camera));
             if (_cameraRef == IntPtr.Zero)
@@ -102,19 +112,23 @@ namespace Canon.Sdk.Core
             uint err = EDSDKLib.EDSDK.EdsSendCommand(_cameraRef, command, parameter);
             if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
             {
-                Console.WriteLine($"Error sending command 0x{command:X} with param {parameter}. SDK Error: 0x{err:X}"); // Extra logging
+                _logger.Warning($"CanonSdk.Core.Camera: SendCommand failed, sending command {command} with parameter {parameter} but got error {err}...");
                 throw new CanonSdkException($"Failed to send command 0x{command:X} with parameter {parameter}", err);
             }
         }
 
         public string GetModelName()
         {
+            _logger.Verbose($"CanonSdk.Core.Camera: GetModelName called...");
+
             // Gebruikt GetProperty die intern EdsGetPropertyData aanroept
             return GetProperty<string>(EDSDKLib.EDSDK.PropID_ProductName);
         }
 
         public void OpenSession()
         {
+            _logger.Verbose($"CanonSdk.Core.Camera: Opening camera session...");
+
             if (_disposed) throw new ObjectDisposedException(nameof(Camera));
             if (_cameraRef == IntPtr.Zero) throw new InvalidOperationException("Camera reference is not valid.");
 
@@ -123,11 +137,15 @@ namespace Canon.Sdk.Core
             {
                 throw new CanonSdkException("Failed to open session with camera", err);
             }
+
             SetSaveToHost(); // Essentieel na openen sessie
         }
 
         private void SetSaveToHost()
         {
+
+            _logger.Verbose($"CanonSdk.Core.Camera: SetSaveToHost called...");
+
             // Deze methode gebruikt direct EdsSetPropertyData en EdsSetCapacity,
             // wat prima is omdat het specifieke property-instellingen zijn, geen generieke commando's.
             // Je zou SetPropertyData<uint>(...) kunnen gebruiken als je die methode ook aanpast
@@ -142,7 +160,7 @@ namespace Canon.Sdk.Core
                     Console.WriteLine($"CRITICAL ERROR: Failed to set PropID_SaveTo to Host. SDK Error: 0x{err:X}");
                     throw new CanonSdkException($"Failed to set save location (PropID_SaveTo) to host. SDK Error: 0x{err:X}", err);
                 }
-                Console.WriteLine("Successfully set PropID_SaveTo to Host.");
+                _logger.Verbose("CanonSdk.Core.Camera: Successfully set PropID_SaveTo to Host.");
 
                 EDSDKLib.EDSDK.EdsCapacity capacity = new EDSDKLib.EDSDK.EdsCapacity
                 {
@@ -150,28 +168,31 @@ namespace Canon.Sdk.Core
                     BytesPerSector = 0x1000,
                     Reset = 1
                 };
+
                 err = EDSDKLib.EDSDK.EdsSetCapacity(_cameraRef, capacity);
                 if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
                 {
                     Console.WriteLine($"CRITICAL ERROR: Failed to set capacity for host saving. SDK Error: 0x{err:X}");
                     throw new CanonSdkException($"Failed to set capacity for host saving. SDK Error: 0x{err:X}", err);
                 }
-                Console.WriteLine("Successfully set capacity for host saving.");
+                _logger.Verbose("CanonSdk.Core.Camera: Successfully set capacity for host saving.");
             }
             catch (CanonSdkException ex)
             {
-                Console.WriteLine($"CanonSdkException in SetSaveToHost: {ex.Message} (SDK Error: 0x{ex.ErrorCode:X})");
+                _logger.Warning($"CanonSdk.Core.Camera: CanonSdkException in SetSaveToHost: {ex.Message} (SDK Error: 0x{ex.ErrorCode:X})");
                 throw;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Generic error in SetSaveToHost: {ex.Message}");
+                _logger.Warning($"CanonSdk.Core.Camera: Generic error in SetSaveToHost: {ex.Message}");
                 throw new Exception("Failed to configure camera for host saving.", ex);
             }
         }
 
         public void CloseSession()
         {
+            _logger.Verbose($"CanonSdk.Core.Camera: Closing camera session...");
+
             if (_disposed) throw new ObjectDisposedException(nameof(Camera));
             if (_cameraRef == IntPtr.Zero) return; // Sessie kan niet gesloten worden als er geen ref is
 
@@ -179,50 +200,51 @@ namespace Canon.Sdk.Core
             if (err != EDSDKLib.EDSDK.EDS_ERR_OK)
             {
                 // Loggen is hier beter dan een harde throw, omdat dit vaak in Dispose wordt aangeroepen
-                Console.WriteLine($"Warning: Failed to close session with camera. SDK Error: 0x{err:X}");
+                _logger.Warning($"CanonSdk.Core.Camera: Failed to close session with camera. SDK Error: 0x{err:X}");
                 // throw new CanonSdkException("Failed to close session with camera", err);
             }
         }
 
         public void TakePicture()
         {
-            Console.WriteLine("CAMERA.CS: Entering TakePicture using SendCommand sequence...");
+            _logger.Verbose("CanonSdk.Core.Camera: TakePicture called, preparing to send shutter commands...");
             try
             {
-                Console.WriteLine("CAMERA.CS: Sending ShutterButton_Completely via SendCommand...");
+                _logger.Verbose("CanonSdk.Core.Camera: Sending ShutterButton_Completely via SendCommand...");
                 SendCommand(EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_Completely);
-                Console.WriteLine("CAMERA.CS: ShutterButton_Completely command successful.");
+                _logger.Verbose("CanonSdk.Core.Camera: ShutterButton_Completely command successful.");
 
                 Thread.Sleep(100); // Korte pauze, essentieel voor sommige camera's om het commando te verwerken
                                    // voordat het release commando komt. 500ms was in je oude code, 100ms kan ook werken. Test dit.
             }
             finally
             {
-                Console.WriteLine("CAMERA.CS: Sending ShutterButton_OFF via SendCommand...");
+                _logger.Verbose("CanonSdk.Core.Camera: Sending ShutterButton_OFF command to release the shutter button...");
                 try
                 {
                     SendCommand(EDSDKLib.EDSDK.CameraCommand_PressShutterButton, (int)EDSDKLib.EDSDK.EdsShutterButton.CameraCommand_ShutterButton_OFF);
-                    Console.WriteLine("CAMERA.CS: ShutterButton_OFF command successful.");
+                    _logger.Verbose("CanonSdk.Core.Camera: ShutterButton_OFF command sent successfully.");
                 }
                 catch (CanonSdkException ex)
                 {
                     // Dit is problematisch als de knop "ingedrukt" blijft.
-                    Console.WriteLine($"CRITICAL: Failed to send ShutterButton_OFF after TakePicture. SDK Error: 0x{ex.ErrorCode:X} - {ex.Message}");
+                    _logger.Error($"CanonSdk.Core.Camera: Failed to send ShutterButton_OFF after TakePicture. SDK Error: 0x{ex.ErrorCode:X} - {ex.Message}");
                     // Overweeg hier verdere actie, hoewel de initiële foto mogelijk al genomen is.
                 }
             }
-            Console.WriteLine("CAMERA.CS: Exiting TakePicture.");
+            _logger.Verbose("CanonSdk.Core.Camera: Exiting TakePicture method.");
         }
 
         public void ExtendShutdownTimer()
         {
-            Console.WriteLine("CAMERA.CS: Extending shutdown timer via SendCommand...");
+            _logger.Verbose("CanonSdk.Core.Camera: ExtendShutdownTimer called, sending ExtendShutDownTimer command...");
             SendCommand(EDSDKLib.EDSDK.CameraCommand_ExtendShutDownTimer, 0);
-            Console.WriteLine("CAMERA.CS: ExtendShutdownTimer command sent.");
+            _logger.Verbose("CanonSdk.Core.Camera: ExtendShutdownTimer command sent successfully.");
         }
 
         public void SyncClock()
         {
+            _logger.Verbose("CanonSdk.Core.Camera: SyncClock called, synchronizing camera clock with system time...");
             if (_disposed) throw new ObjectDisposedException(nameof(Camera));
 
             DateTime now = DateTime.Now;
@@ -236,6 +258,7 @@ namespace Canon.Sdk.Core
                 Second = now.Second,
                 Milliseconds = 0 // Milliseconden worden meestal niet ondersteund
             };
+            _logger.Verbose($"CanonSdk.Core.Camera: Setting camera time to {edsTime.Year}-{edsTime.Month}-{edsTime.Day} {edsTime.Hour}:{edsTime.Minute}:{edsTime.Second}...");
 
             // Gebruik SetPropertyData met de EdsTime struct
             SetPropertyData(EDSDK.PropID_DateTime, edsTime);
@@ -259,12 +282,12 @@ namespace Canon.Sdk.Core
                 }
                 catch (CanonSdkException ex) when (ex.ErrorCode == EDSDK.EDS_ERR_PROPERTIES_UNAVAILABLE)
                 {
-                    Console.WriteLine("Warning: Battery level property unavailable.");
+                    _logger.Warning($"CanonSdk.Core.Camera: Battery level property unavailable. SDK Error: 0x{ex.ErrorCode:X}");
                     return -1;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error getting BatteryLevel: {ex.Message}");
+                    _logger.Error($"CanonSdk.Core.Camera: Error getting BatteryLevel: {ex.Message}");
                     return -1;
                 }
             }
