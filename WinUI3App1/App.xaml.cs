@@ -671,7 +671,7 @@ namespace WinUI3App1
                         state = State,
                         currentPage = CurrentPageName, // Include current page name
                         timestamp = DateTime.UtcNow.ToString("o"),
-                        cameraConnected = false, // Placeholder, replace with actual camera status
+                        cameraConnected = App.AppCameraService.IsCameraSessionOpen, // Placeholder, replace with actual camera status
                     };
 
                     // Add JsonSerializerOptions with Enum Converter
