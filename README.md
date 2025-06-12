@@ -1,6 +1,6 @@
 # WinUI3App1
 
-WinUI3App1 is a .NET 8 desktop application built using the Windows App SDK (WinUI 3). The project leverages the Canon EDSDK (Canon SDK) for camera 
+WinUI3App1 is a photo booth app built in .NET 8 for WinUI3. The project leverages the Canon EDSDK (Canon SDK) for camera 
 integration and Config.Net for flexible configuration management.
 
 ## Tech Stack
@@ -9,6 +9,12 @@ integration and Config.Net for flexible configuration management.
 - **WinUI 3** (Windows App SDK)
 - **Canon SDK (EDSDK)** for camera control and image capture
 - **Config.Net** for configuration handling  (https://github.com/aloneguid/config)
+- **MQTT** for 
+	- controlling external hardware (e.g., LED lights via ESPHome)  (see [videobooth-hardware](https://github.com/dschoorisse/videobooth-hardware))
+	- communiction to central server (e.g., for remote monitoring or control)
+- **Serilog** for logging and diagnostics
+- **DNP HotFolder Utility** for automatic printing of images to DNP printers
+- 
 
 ## Usage
 
@@ -37,11 +43,11 @@ This application is designed to work with the following external hardware compon
 
 ### Camera
 
-### Camera
-
 #### Canon Camera Usage
 
-For this project, Canon mirrorless cameras are used for high-quality image capture and reliable remote control via the Canon EDSDK. After evaluating several models, the Canon EOS R50 and EOS R100 were considered. Based on the requirements for autofocus performance, video capabilities, and power options, the Canon EOS R50 is the preferred choice.
+For this project, Canon mirrorless cameras are used for high-quality image capture and reliable remote control via the Canon EDSDK. 
+After evaluating several model specifications, the Canon EOS R50 and EOS R100 were considered. Based on the requirements for autofocus 
+performance, video capabilities, and power options, the Canon EOS R50 is the preferred choice.
 
 Below is a direct comparison of the two models:
 
