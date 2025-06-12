@@ -130,6 +130,8 @@ namespace WinUI3App1
                 AppCameraService.CameraDisconnected += AppCameraService_CameraDisconnected;
                 AppCameraService.CameraErrorOccurred += AppCameraService_CameraErrorOccurred;
                 // PhotoSuccessfullyTakenAndDownloaded kan hier ook of direct in de aanroepende code.
+
+                AppCameraService.CurrentState.PropertyChanged += CurrentState_PropertyChanged;
             }
             else
             {
@@ -626,7 +628,9 @@ namespace WinUI3App1
                 // publish the full current settings to the /settings/current_state topic.
                 Logger.Information("MQTT: Connection established, now publishing full current settings for {PhotoboothId}.", PhotoboothIdentifier);
                 await PublishCurrentSettingsToMqttAsync(CurrentSettings); // Maybe have to change to fire and forget _ = if this holds up the UI thread
+                await PublishPhotoBoothStatusJsonAsync();
                 await PublishPrinterStatusToMqttAsync();
+                await PublishCameraStatusAsync();
             }
             else
             {
@@ -671,7 +675,6 @@ namespace WinUI3App1
                         state = State,
                         currentPage = CurrentPageName, // Include current page name
                         timestamp = DateTime.UtcNow.ToString("o"),
-                        cameraConnected = App.AppCameraService.IsCameraSessionOpen, // Placeholder, replace with actual camera status
                     };
 
                     // Add JsonSerializerOptions with Enum Converter
@@ -696,6 +699,47 @@ namespace WinUI3App1
             {
                 Logger?.Warning("MQTT: Not connected. Cannot publish JSON status '{State}'", PhotoboothIdentifier);
             }
+        }
+
+        public static async Task PublishCameraStatusAsync()
+        {
+            // Ensure MQTT and Camera services are available and connected
+            if (MqttServiceInstance == null || !MqttServiceInstance.IsConnected || AppCameraService == null)
+            {
+                Logger?.Warning("Cannot publish camera status: MQTT service not connected or CameraService not available.");
+                return;
+            }
+
+            string topic = $"photobooth/{PhotoboothIdentifier}/camera/status";
+            try
+            {
+                // The CurrentState object in CameraService is already well-structured for serialization
+                var payloadObject = AppCameraService.CurrentState;
+
+                var serializerOptions = new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = false, // Use compact JSON for MQTT
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                    Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } // Serialize enums as strings
+                };
+
+                string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payloadObject, serializerOptions);
+
+                // Publish the status with the retain flag set to true
+                await MqttServiceInstance.PublishAsync(topic, jsonPayload, MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce, retain: true);
+                Logger?.Debug("Camera status published to MQTT topic {Topic}", topic);
+            }
+            catch (Exception ex)
+            {
+                Logger?.Error(ex, "Failed to serialize and publish camera status to MQTT topic {Topic}", topic);
+            }
+        }
+
+        private void CurrentState_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            Logger?.Debug("Camera state property changed: {PropertyName}. Publishing update to MQTT.", e.PropertyName);
+            // Use fire-and-forget so we don't block the event handler
+            _ = PublishCameraStatusAsync();
         }
 
         private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
