@@ -19,10 +19,18 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Canon.Sdk.Core;
 using Canon.Sdk.Exceptions;
 using System.Threading;
-using EDSDKLib; // For handling keyboard shortcuts
+using EDSDKLib;
+using System.Linq; // For handling keyboard shortcuts
 
 namespace WinUI3App
 {
+    // Data model for a status item displayed in the UI during fatal errors (shown to the guests)
+    public class StatusItem
+    {
+        public string IconGlyph { get; set; }
+        public string Message { get; set; }
+    }
+
     public sealed partial class MainPage : Page
     {
         // Configuration for the secret admin access
@@ -33,6 +41,10 @@ namespace WinUI3App
 
         // Logging collection
         private ObservableCollection<LogEntry> _logs = new ObservableCollection<LogEntry>();
+
+        // Collection for status indicators
+        // shows errors in the UI during fatal errors (shown to the guests)
+        public ObservableCollection<StatusItem> StatusItems { get; } = new();
 
         // Timer for tracking corner touches within time window
         private DispatcherTimer _cornerTouchTimer;
@@ -147,6 +159,8 @@ namespace WinUI3App
             // Load UI texts
             LoadDynamicUITexts();
 
+            // Set initial status indicators in UI
+            UpdateStatusIndicators();
 
             App.State = App.PhotoBoothState.Idle;
         }
@@ -478,6 +492,43 @@ namespace WinUI3App
                 // Navigate to the settings page
                 OpenSetttingsPage();
             }
+        }
+
+        // Event handler for camera status changes
+        private void OnCameraStatusChanged(object sender, EventArgs e)
+        {
+            // Update the status indicators whenever the camera connects or disconnects
+            UpdateStatusIndicators();
+        }
+
+        // Method to update all status indicators
+        private void UpdateStatusIndicators()
+        {
+            // This method should be run on the UI thread
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                StatusItems.Clear();
+
+                // Check Camera Status
+                if (App.AppCameraService == null || !App.AppCameraService.IsCameraAvailable)
+                {
+                    StatusItems.Add(new StatusItem { IconGlyph = "\uE783", Message = "Camera Not Connected" });
+                }
+
+                if (App.CurrentSettings.EnablePrinting)
+                {
+                    // TODO: the printer status UI is currently only updated when 
+                    // the camera status changes
+                    if (App.LastKnownPrinterStatus.IsPrinterLikelyConnected != true)
+                    {
+                        StatusItems.Add(new StatusItem { IconGlyph = "\uE749", Message = "Printer Error" });
+                    }
+
+                }
+
+                // Show or hide the overlay based on whether there are any status items
+                StatusOverlay.Visibility = StatusItems.Any() ? Visibility.Visible : Visibility.Collapsed;
+            });
         }
 
         /*
