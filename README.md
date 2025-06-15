@@ -65,3 +65,86 @@ Or buy the camera body (~ €689,- ) and pair it with a high-quality lens like the
 - **Bokeh and Low Light (f/2.8 Aperture):** The f/2.8 maximum aperture is significantly "faster" than the f/4.5 of your kit lens at its widest. This allows for a much shallower depth of field, which will help separate your subjects from the background and give you that pleasing bokeh. It also excels in low-light, though for a photobooth with its own lighting, the main benefit is the background blur.
 - **Wide Field of View:** On the R50/R100's APS-C sensor, this 16mm lens gives a field of view equivalent to about 26mm on a full-frame camera. This is even a little wider than your kit lens at 18mm (~29mm equivalent), making it fantastic for fitting groups of people into the shot, especially if your photobooth is in a tight space.
 - **Affordable and Compact:** This is one of Canon's most budget-friendly prime lenses in the RF lineup. It delivers excellent value for its performance and is very small and lightweight, keeping your photobooth setup compact.
+
+## System Architecture
+
+```mermaid
+---
+title: Photobooth System Architecture
+---
+graph TD
+    subgraph "Local Environment"
+        A[WinUI Photobooth App]
+        B((Canon EOS Camera))
+        C((DNP Printer))
+        D{{Hot Folder}}
+    end
+
+    subgraph "Network Services"
+        E(MQTT Broker)
+        F(S3 / MinIO Storage)
+        G(Seq Logging Server)
+    end
+
+    A -- "USB (Canon EDSDK)" --> B
+    A -- "Monitors File System" --> D
+    C -- "Writes Status File" --> D
+    A -- "Copies JPG" --> D
+
+    A -- "TCP/IP" --> E
+    A -- "HTTPS/S3 API" --> F
+    A -- "HTTP" --> G
+
+    style A fill:#0078D4,stroke:#333,stroke-width:2px,color:#fff
+    style B fill:#D9534F,stroke:#333,stroke-width:2px,color:#fff
+    style C fill:#D9534F,stroke:#333,stroke-width:2px,color:#fff
+    style E fill:#5CB85C,stroke:#333,stroke-width:2px,color:#fff
+    style F fill:#5CB85C,stroke:#333,stroke-width:2px,color:#fff
+    style G fill:#5CB85C,stroke:#333,stroke-width:2px,color:#fff
+```
+
+## Internal Application Services
+
+```mermaid
+---
+title: Internal Application Services
+---
+graph TD
+    subgraph "WinUI3App1 Project"
+        App[App.xaml.cs]
+        PS[PhotoBoothPage.xaml.cs]
+        CS[CameraService]
+        MS[MqttService]
+        DS[DnpStatusService]
+        S3[S3Service]
+        SM[SettingsManager]
+    end
+
+    subgraph "External Dependencies"
+        SDK[Canon.Sdk]
+        MQTT((MQTT Broker))
+        DNP_FILE{{Printer Status JSON}}
+        S3_CLOUD((S3 / MinIO Storage))
+        LOGS((Seq Server))
+    end
+
+    App -- "Initializes & Holds" --> CS
+    App -- "Initializes & Holds" --> MS
+    App -- "Initializes & Holds" --> DS
+    App -- "Reads/Writes Settings" --> SM
+
+    PS -- "Uses" --> S3
+    PS -- "Calls" --> CS
+
+    CS -- "Wraps" --> SDK
+    MS -- "Connects to" --> MQTT
+    DS -- "Monitors" --> DNP_FILE
+    S3 -- "Uploads to" --> S3_CLOUD
+    App -- "Sends Logs" --> LOGS
+
+    style App fill:#0078D4,stroke:#333,stroke-width:2px,color:#fff
+    style CS fill:#F0AD4E,stroke:#333,stroke-width:2px,color:#fff
+    style MS fill:#F0AD4E,stroke:#333,stroke-width:2px,color:#fff
+    style DS fill:#F0AD4E,stroke:#333,stroke-width:2px,color:#fff
+    style S3 fill:#F0AD4E,stroke:#333,stroke-width:2px,color:#fff
+    style SDK fill:#5BC0DE,stroke:#333,stroke-width:2px,color:#fff
