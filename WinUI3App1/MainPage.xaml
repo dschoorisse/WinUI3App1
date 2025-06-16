@@ -149,22 +149,6 @@
           Tapped="BottomRightCorner_Tapped"
           Canvas.ZIndex="1"/>
 
-    <!-- NEW: Status Indicator Overlay -->
-    <Grid x:Name="StatusOverlay" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="20" Visibility="Collapsed">
-        <ItemsControl ItemsSource="{x:Bind StatusItems}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="local:StatusItem">
-                    <Grid Background="{ThemeResource SystemControlErrorTextForegroundBrush}" CornerRadius="4" Padding="12,8" Margin="0,0,0,5">
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="{x:Bind IconGlyph}" Foreground="White"/>
-                            <TextBlock Text="{x:Bind Message}" Foreground="White" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </Grid>
-
     <TextBox x:Name="DebugTextBox"
     Visibility="Collapsed"
     IsReadOnly="True"

@@ -18,10 +18,20 @@ using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Dispatching;
+using System.Collections.ObjectModel;
+using System.Linq;
 
 // Ensure this namespace matches your project, e.g., WinUI3App1
 namespace WinUI3App1
 {
+
+    // Data model for a status item displayed in the UI during fatal errors (shown to the guests)
+    public class StatusItem
+    {
+        public string IconGlyph { get; set; }
+        public string Message { get; set; }
+    }
+
     public partial class App : Application
     {
         public static Window MainWindow { get; private set; }
@@ -31,8 +41,6 @@ namespace WinUI3App1
         public static MqttService MqttServiceInstance { get; private set; }
         public static CameraService AppCameraService { get; private set; }
         public static DnpStatusService DnpStatusMonitor { get; private set; }
-
-        public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
 
         // Settings management
         public static string PhotoboothIdentifier { get; private set; }
@@ -48,6 +56,11 @@ namespace WinUI3App1
 
         // Global state
         private static PhotoBoothState _state = PhotoBoothState.Idle; // will be used to track the current state of the app, updates will automatically trigger MQTT status updates
+        public static string CurrentPageName { get; private set; } = "Initializing"; // Holds current page name
+
+        // Collection for status indicators
+        // shows errors in the UI during fatal errors (shown to the guests)
+        public static ObservableCollection<StatusItem> StatusItems { get; } = new();
 
         // Background image preloading
         public static DateTime lastPreloadBackgroundUtc { get; set; }
@@ -56,7 +69,7 @@ namespace WinUI3App1
         // For DNP Status Service (TODO: can we enclose this inside the service?)
         public static PrinterStatusEventArgs LastKnownPrinterStatus { get; private set; }  // Om de laatste status vast te houden
         private static System.Diagnostics.Stopwatch _printingFinishedStopwatch = new System.Diagnostics.Stopwatch(); // Moet static zijn als methode static is
-        private static string _previousPrinterStatusForLight; // Moet static zijn
+        private static string _previousPrinterStatusForLight; // Moet static zij
         public static DateTime lastPrintTime;
 
         // Printer light control
@@ -129,9 +142,9 @@ namespace WinUI3App1
                 AppCameraService.CameraConnectionFailed += AppCameraService_CameraConnectionFailed;
                 AppCameraService.CameraDisconnected += AppCameraService_CameraDisconnected;
                 AppCameraService.CameraErrorOccurred += AppCameraService_CameraErrorOccurred;
+                AppCameraService.CurrentState.PropertyChanged += CurrentState_PropertyChanged;
                 // PhotoSuccessfullyTakenAndDownloaded kan hier ook of direct in de aanroepende code.
 
-                AppCameraService.CurrentState.PropertyChanged += CurrentState_PropertyChanged;
             }
             else
             {
@@ -234,6 +247,9 @@ namespace WinUI3App1
             else Logger.Information("Computer name does not match. Application will start in default windowed mode.");
             #endregion
 
+            // Perform initial status check after all services are initialized
+            UpdateStatusIndicators();
+
             MainWindow.Activate();
             Logger.Debug("Main window activated");
 
@@ -317,6 +333,39 @@ namespace WinUI3App1
                 }
             }
             #endregion
+        }
+
+        // Method to update all status indicators
+        private void UpdateStatusIndicators()
+        {
+            // This method should be run on the UI thread
+            MainWindow.DispatcherQueue.TryEnqueue(() =>
+            {
+                StatusItems.Clear();
+
+                // Check Camera Status
+                if (App.AppCameraService == null || !App.AppCameraService.IsCameraAvailable)
+                {
+                    StatusItems.Add(new StatusItem { IconGlyph = "\uE783", Message = "Camera Not Connected" });
+                }
+
+                if (App.CurrentSettings.EnablePrinting)
+                {
+                    // TODO: the printer status UI is currently only updated when 
+                    // the camera status changes
+                    if (App.LastKnownPrinterStatus.IsPrinterLikelyConnected != true)
+                    {
+                        StatusItems.Add(new StatusItem { IconGlyph = "\uE749", Message = "Printer Error" });
+                    }
+
+                }
+
+                // Show or hide the overlay based on whether there are any status items
+                // StatusOverlay.Visibility = StatusItems.Any() ? Visibility.Visible : Visibility.Collapsed;
+                
+                // The UI will update automatically because it's bound to the collection.
+                // We no longer need to manage the Visibility property here.
+            });
         }
 
         private static async void RootFrame_Navigated(object sender, NavigationEventArgs e)
@@ -1189,24 +1238,32 @@ namespace WinUI3App1
         private void AppCameraService_CameraReady(object sender, EventArgs e)
         {
             Logger.Information("App: Event triggered - CameraReady. Camera is verbonden en sessie is open.");
+
+            UpdateStatusIndicators();
             // Hier kun je UI-updates triggeren of andere logica starten die afhankelijk is van een werkende camera.
         }
 
         private void AppCameraService_CameraConnectionFailed(object sender, EventArgs e)
         {
             Logger.Error("App: Event triggered - CameraConnectionFailed. Kon geen verbinding maken of sessie openen.");
+
+            UpdateStatusIndicators();
             // Toon eventueel een melding aan de gebruiker.
         }
 
         private void AppCameraService_CameraDisconnected(object sender, EventArgs e)
         {
             Logger.Warning("App: Event triggered - CameraDisconnected. Camera is losgekoppeld of sessie is gesloten.");
+
+            UpdateStatusIndicators();
             // Update UI om aan te geven dat de camera niet beschikbaar is.
         }
 
         private void AppCameraService_CameraErrorOccurred(object sender, string errorMessage)
         {
             Logger.Error("App: Event triggered - CameraErrorOccurred. Foutmelding: {ErrorMessage}", errorMessage);
+
+            UpdateStatusIndicators();
             // Toon eventueel een specifieke foutmelding aan de gebruiker.
         }
         #endregion
